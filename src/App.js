@@ -1,4 +1,3 @@
-import React from "react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -444,9 +443,22 @@ export default function DiscogsWantList() {
         @keyframes fadein { from { opacity: 0; transform: translateY(4px);} to {opacity:1; transform:translateY(0);} }
         .toast { animation: risein 0.25s ease; }
         @keyframes risein { from { opacity:0; transform: translate(-50%, 8px);} to {opacity:1; transform: translate(-50%,0);} }
+
+        /* Mobile: prevent iOS Safari from auto-zooming when an input is
+           focused (it does this automatically for any input under 16px) */
+        @media (max-width: 640px) {
+          input, .file-upload-btn { font-size: 16px !important; }
+        }
+
+        /* Mobile: tighter outer padding and slightly larger tap targets */
+        @media (max-width: 480px) {
+          .wantlist-container { padding: 24px 14px 48px !important; }
+          .tab-btn { padding: 11px 8px !important; font-size: 12.5px !important; }
+          button { min-height: 38px; }
+        }
       `}</style>
 
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: "36px 20px 60px" }}>
+      <div className="wantlist-container" style={{ maxWidth: 640, margin: "0 auto", padding: "36px 20px 60px" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
           <img
@@ -470,7 +482,7 @@ export default function DiscogsWantList() {
         </p>
         <p style={{ color: "#9A9A9A", fontSize: 14.5, lineHeight: 1.5, marginTop: 14, marginBottom: 28, textAlign: "center" }}>
           Search Discogs, drop what you're hunting for onto the list, and we'll keep an eye out
-          for it in the crates. Every entry is tied to a name — nothing gets lost in the shop.
+          for it. Every entry is tied to a name, so make sure you enter the same name the same way as you're adding items.
         </p>
 
         {/* Tabs */}
@@ -542,7 +554,7 @@ export default function DiscogsWantList() {
               />
             </div>
             <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 20px 2px" }}>
-              Required — every item gets tied to your name
+              Required: every item gets tied to your name, so enter your name the same way each time you add items.
             </p>
 
             <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
@@ -1085,8 +1097,9 @@ export default function DiscogsWantList() {
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 10,
-                        padding: "6px 4px 6px 22px",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        padding: "8px 4px 8px 22px",
                       }}
                     >
                       <RecordThumb src={item.thumb} alt={item.title} size={34} />
