@@ -1,5 +1,6 @@
+import React from "react";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
+import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
 
@@ -87,6 +88,7 @@ export default function DiscogsWantList() {
   useFonts();
 
   const [name, setName] = useState("");
+  const [notes, setNotes] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -192,11 +194,13 @@ export default function DiscogsWantList() {
       title: item.title,
       thumb: item.thumb || item.cover_image || null,
       url: item.uri ? `https://www.discogs.com${item.uri}` : null,
+      notes: notes.trim() || null,
     };
     try {
       const { error } = await supabase.from("wantlist_entries").insert([entry]);
       if (error) throw error;
       setEntries((prev) => [{ ...entry, addedAt: new Date().toISOString() }, ...prev]);
+      setNotes("");
       showToast(`Added "${item.title}" to your want list`);
     } catch (e) {
       showToast("Couldn't save that item — try again");
@@ -219,12 +223,14 @@ export default function DiscogsWantList() {
       thumb: null,
       year: manual.year.trim(),
       url: manual.url.trim() || null,
+      notes: notes.trim() || null,
     };
     try {
       const { error } = await supabase.from("wantlist_entries").insert([entry]);
       if (error) throw error;
       setEntries((prev) => [{ ...entry, addedAt: new Date().toISOString() }, ...prev]);
       setManual({ title: "", artist: "", year: "", url: "" });
+      setNotes("");
       showToast(`Added "${entry.title}" to your want list`);
     } catch (e) {
       showToast("Couldn't save that item — try again");
@@ -240,6 +246,7 @@ export default function DiscogsWantList() {
     artist: ["artist", "band"],
     year: ["year", "release year"],
     url: ["url", "link", "discogs url", "discogs link"],
+    notes: ["notes", "note", "comment", "comments"],
   };
 
   const findColumn = (headerRow, aliases, claimed) => {
@@ -293,6 +300,8 @@ export default function DiscogsWantList() {
         if (urlCol !== -1) claimed.add(urlCol);
         const yearCol = findColumn(header, COLUMN_ALIASES.year, claimed);
         if (yearCol !== -1) claimed.add(yearCol);
+        const notesCol = findColumn(header, COLUMN_ALIASES.notes, claimed);
+        if (notesCol !== -1) claimed.add(notesCol);
         const nameCol = findColumn(header, COLUMN_ALIASES.name, claimed);
 
         if (titleCol === -1) {
@@ -310,6 +319,7 @@ export default function DiscogsWantList() {
             artist: artistCol !== -1 ? (r[artistCol] || "").toString().trim() : "",
             year: yearCol !== -1 ? (r[yearCol] || "").toString().trim() : "",
             url: urlCol !== -1 ? (r[urlCol] || "").toString().trim() : "",
+            notes: notesCol !== -1 ? (r[notesCol] || "").toString().trim() : "",
           }));
 
         if (parsed.length === 0) {
@@ -346,6 +356,7 @@ export default function DiscogsWantList() {
         thumb: null,
         year: r.year || "",
         url: r.url || null,
+        notes: r.notes || null,
       };
     });
     try {
@@ -482,7 +493,7 @@ export default function DiscogsWantList() {
         </p>
         <p style={{ color: "#9A9A9A", fontSize: 14.5, lineHeight: 1.5, marginTop: 14, marginBottom: 28, textAlign: "center" }}>
           Search Discogs, drop what you're hunting for onto the list, and we'll keep an eye out
-          for it. Every entry is tied to a name, so make sure you enter the same name the same way as you're adding items.
+          for it in the crates. Every entry is tied to a name — nothing gets lost in the shop.
         </p>
 
         {/* Tabs */}
@@ -554,7 +565,34 @@ export default function DiscogsWantList() {
               />
             </div>
             <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 20px 2px" }}>
-              Required: every item gets tied to your name, so enter your name the same way each time you add items.
+              Required — every item gets tied to your name
+            </p>
+
+            <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
+              NOTES <span style={{ color: "#6B6B6B", fontWeight: 400, letterSpacing: 0 }}>(optional)</span>
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Any pressing is fine / looking for the Japanese pressing specifically / etc."
+              rows={2}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #2A2A2A",
+                background: "#121212",
+                color: "#F5F0EC",
+                fontSize: 13.5,
+                boxSizing: "border-box",
+                outline: "none",
+                resize: "vertical",
+                fontFamily: "'Barlow', sans-serif",
+                marginBottom: 6,
+              }}
+            />
+            <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 20px 2px" }}>
+              Attached to the next item you add — search below, or add by hand
             </p>
 
             <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
@@ -864,7 +902,7 @@ export default function DiscogsWantList() {
                     Choose a .csv or .xlsx file
                   </button>
                   <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "8px 2px 0" }}>
-                    Columns recognized: Name, Title/Album, Artist, Year, URL — any order, any capitalization
+                    Columns recognized: Name, Title/Album, Artist, Year, URL, Notes — any order, any capitalization
                   </p>
                 </div>
               )}
@@ -1056,6 +1094,13 @@ export default function DiscogsWantList() {
                         >
                           {p.found && <CheckCircle2 size={11} color="#6FA987" />}
                           {p.name}
+                          {p.notes && (
+                            <StickyNote
+                              size={11}
+                              color={p.found ? "#6FA987" : "#9A9A9A"}
+                              title={p.notes}
+                            />
+                          )}
                         </button>
                       ))}
                     </div>
@@ -1103,33 +1148,50 @@ export default function DiscogsWantList() {
                       }}
                     >
                       <RecordThumb src={item.thumb} alt={item.title} size={34} />
-                      {item.url ? (
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            fontSize: 13.5,
-                            color: item.found ? "#6B6B6B" : "#D8D3CC",
-                            flex: 1,
-                            textDecoration: item.found ? "line-through" : "none",
-                            borderBottom: item.found ? "none" : "1px solid #E11B23",
-                          }}
-                        >
-                          {item.title}
-                        </a>
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: 13.5,
-                            color: item.found ? "#6B6B6B" : "#D8D3CC",
-                            flex: 1,
-                            textDecoration: item.found ? "line-through" : "none",
-                          }}
-                        >
-                          {item.title}
-                        </span>
-                      )}
+                      <div style={{ flex: 1, minWidth: 160, display: "flex", flexDirection: "column" }}>
+                        {item.url ? (
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              fontSize: 13.5,
+                              color: item.found ? "#6B6B6B" : "#D8D3CC",
+                              textDecoration: item.found ? "line-through" : "none",
+                              borderBottom: item.found ? "none" : "1px solid #E11B23",
+                              width: "fit-content",
+                            }}
+                          >
+                            {item.title}
+                          </a>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 13.5,
+                              color: item.found ? "#6B6B6B" : "#D8D3CC",
+                              textDecoration: item.found ? "line-through" : "none",
+                            }}
+                          >
+                            {item.title}
+                          </span>
+                        )}
+                        {item.notes && (
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              color: "#9A9A9A",
+                              fontStyle: "italic",
+                              marginTop: 2,
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: 4,
+                            }}
+                          >
+                            <StickyNote size={11} style={{ flexShrink: 0, marginTop: 2 }} />
+                            {item.notes}
+                          </span>
+                        )}
+                      </div>
                       <button
                         onClick={() => toggleFound(item.id)}
                         title={item.found ? "Mark as still wanted" : "Mark as found"}
