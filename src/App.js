@@ -489,7 +489,7 @@ export default function DiscogsWantList() {
         </p>
         <p style={{ color: "#9A9A9A", fontSize: 14.5, lineHeight: 1.5, marginTop: 14, marginBottom: 28, textAlign: "center" }}>
           Search Discogs, drop what you're hunting for onto the list, and we'll keep an eye out
-          for it. Every entry is tied to a name, so use the same name spelled the same way each time!
+          for it. Every entry is tied to a name, be sure to enter it te same way each time.
         </p>
 
         {/* Tabs */}
@@ -561,7 +561,7 @@ export default function DiscogsWantList() {
               />
             </div>
             <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 20px 2px" }}>
-              Required — every item gets tied to your name, so again, make sure it's entered the same each time you add an item.
+              Required — every item gets tied to your name, be sure to enter it the same way for each item.
             </p>
 
             <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
@@ -618,7 +618,7 @@ export default function DiscogsWantList() {
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any pressing is fine / looking for the Japanese pressing specifically / must have obi / etc."
+              placeholder="Any pressing is fine / looking for the Japanese pressing specifically / etc."
               rows={2}
               style={{
                 width: "100%",
@@ -741,7 +741,7 @@ export default function DiscogsWantList() {
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#869A9A",
+                  color: "#9A9A9A",
                   fontSize: 12.5,
                   fontWeight: 600,
                   cursor: "pointer",
@@ -1271,7 +1271,11 @@ export default function DiscogsWantList() {
                         {item.found ? "Found" : "Mark found"}
                       </button>
                       <button
-                        onClick={() => removeEntry(item.id)}
+                        onClick={() => {
+                          if (window.confirm(`Remove "${item.title}" from ${p.name}'s want list?`)) {
+                            removeEntry(item.id);
+                          }
+                        }}
                         title="Remove"
                         style={{
                           background: "none",
