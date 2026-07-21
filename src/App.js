@@ -489,7 +489,7 @@ export default function DiscogsWantList() {
         </p>
         <p style={{ color: "#9A9A9A", fontSize: 14.5, lineHeight: 1.5, marginTop: 14, marginBottom: 28, textAlign: "center" }}>
           Search Discogs, drop what you're hunting for onto the list, and we'll keep an eye out
-          for it. Every entry is tied to a name, be sure to enter it te same way each time.
+          for it. Every entry is tied to a name, be sure to enter it the same way each time.
         </p>
 
         {/* Tabs */}
