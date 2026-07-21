@@ -126,6 +126,7 @@ export default function DiscogsWantList() {
   const [modalNotes, setModalNotes] = useState("");
   const [modalForName, setModalForName] = useState("");
   const [expandedUnwanted, setExpandedUnwanted] = useState({}); // { [personName]: bool }
+  const [collapsedPeople, setCollapsedPeople] = useState({}); // { [personName]: bool } — true = collapsed
 
   // Spreadsheet upload
   const fileInputRef = useRef(null);
@@ -472,8 +473,9 @@ export default function DiscogsWantList() {
   const byItem = {};
   entries.forEach((e) => {
     if (e.unwanted) return;
-    if (!byItem[e.title]) byItem[e.title] = { title: e.title, thumb: e.thumb, url: e.url || null, people: [] };
+    if (!byItem[e.title]) byItem[e.title] = { title: e.title, thumb: e.thumb, url: e.url || null, genre: e.genre || null, people: [] };
     if (!byItem[e.title].url && e.url) byItem[e.title].url = e.url;
+    if (!byItem[e.title].genre && e.genre) byItem[e.title].genre = e.genre;
     byItem[e.title].people.push(e);
   });
   const itemGroups = Object.values(byItem).sort((a, b) => b.people.length - a.people.length);
@@ -1139,12 +1141,33 @@ export default function DiscogsWantList() {
                     ) : (
                       <div style={{ fontSize: 15, fontWeight: 500, color: "#F5F0EC" }}>{g.title}</div>
                     )}
+                    {g.genre && (
+                      <div
+                        className="mono"
+                        style={{
+                          fontSize: 10.5,
+                          color: "#E11B23",
+                          marginTop: 3,
+                          letterSpacing: 0.5,
+                        }}
+                      >
+                        {g.genre}
+                      </div>
+                    )}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
                       {g.people.map((p) => (
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => toggleFound(p.id)}
+                          onClick={() => {
+                            if (p.found) {
+                              toggleFound(p.id);
+                              return;
+                            }
+                            if (window.confirm(`Mark "${g.title}" as found for ${p.name}?`)) {
+                              toggleFound(p.id);
+                            }
+                          }}
                           className="mono"
                           title={p.found ? "Mark as still wanted" : "Mark as found"}
                           style={{
@@ -1177,7 +1200,7 @@ export default function DiscogsWantList() {
                   <button
                     onClick={() =>
                       openWantModal(
-                        { title: g.title, thumb: g.thumb, url: g.url, genre: (g.people[0] && g.people[0].genre) || null },
+                        { title: g.title, thumb: g.thumb, url: g.url, genre: g.genre || null },
                         "other"
                       )
                     }
@@ -1252,20 +1275,33 @@ export default function DiscogsWantList() {
                   const unwantedItems = p.items.filter((item) => item.unwanted);
                   return (
                 <div key={p.name} style={{ marginBottom: 22 }}>
-                  <div
+                  <button
+                    type="button"
+                    onClick={() => setCollapsedPeople((prev) => ({ ...prev, [p.name]: !prev[p.name] }))}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
                       marginBottom: 8,
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      width: "100%",
+                      textAlign: "left",
                     }}
                   >
+                    <span className="mono" style={{ fontSize: 11, color: "#6B6B6B", width: 12, flexShrink: 0 }}>
+                      {collapsedPeople[p.name] ? "▸" : "▾"}
+                    </span>
                     <User size={14} color="#E11B23" />
                     <span style={{ fontSize: 14.5, fontWeight: 600, color: "#F5F0EC" }}>{p.name}</span>
                     <span className="mono" style={{ fontSize: 11, color: "#9A9A9A" }}>
                       {activeItems.length} item{activeItems.length !== 1 ? "s" : ""}
                     </span>
-                  </div>
+                  </button>
+                  {!collapsedPeople[p.name] && (
+                    <>
                   {activeItems.map((item) => (
                     <div
                       key={item.id}
@@ -1360,7 +1396,15 @@ export default function DiscogsWantList() {
                         </button>
                       )}
                       <button
-                        onClick={() => toggleFound(item.id)}
+                        onClick={() => {
+                          if (item.found) {
+                            toggleFound(item.id);
+                            return;
+                          }
+                          if (window.confirm(`Mark "${item.title}" as found?`)) {
+                            toggleFound(item.id);
+                          }
+                        }}
                         title={item.found ? "Mark as still wanted" : "Mark as found"}
                         style={{
                           background: "none",
@@ -1457,6 +1501,8 @@ export default function DiscogsWantList() {
                           </div>
                         ))}
                     </div>
+                  )}
+                    </>
                   )}
                 </div>
                   );
