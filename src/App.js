@@ -1119,6 +1119,7 @@ export default function DiscogsWantList() {
                   className="entry-row"
                   style={{
                     display: "flex",
+                    alignItems: "flex-start",
                     gap: 12,
                     padding: "14px 4px",
                     borderBottom: "1px solid #2A2A2A",
@@ -1173,6 +1174,32 @@ export default function DiscogsWantList() {
                       ))}
                     </div>
                   </div>
+                  <button
+                    onClick={() =>
+                      openWantModal(
+                        { title: g.title, thumb: g.thumb, url: g.url, genre: (g.people[0] && g.people[0].genre) || null },
+                        "other"
+                      )
+                    }
+                    title="Add this to your own want list"
+                    style={{
+                      background: "none",
+                      border: "1px solid #E11B23",
+                      color: "#F5F0EC",
+                      cursor: "pointer",
+                      padding: "6px 10px",
+                      borderRadius: 7,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Plus size={13} />
+                    Want
+                  </button>
                 </div>
               ))
             )}
