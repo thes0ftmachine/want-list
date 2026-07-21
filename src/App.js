@@ -1,6 +1,6 @@
 import React from "react";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote } from "lucide-react";
+import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote, RotateCcw } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
 
@@ -14,9 +14,6 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Discogs personal access token — unlocks thumb/cover_image data on search results.
-// Note: this is visible to anyone who views the page source, since this is a
-// client-side app with no backend. Discogs personal tokens don't grant
-// account-modifying access for search calls, so this is fine for a tool like this.
 const DISCOGS_TOKEN = "dYpwRhhtUGpiisteXZdsylSdXTVVAWNvMtdPEWFV";
 
 // Volver Records logo — black field, white skyline linework, red beacon + wordmark gradient
@@ -46,9 +43,6 @@ function useFonts() {
   }, []);
 }
 
-// Makes the actual page (not just our component) black edge-to-edge, and
-// stops mobile browsers from auto-zooming/panning when a text field is
-// focused — that zoom is what caused the "jumps left and zooms in" feel.
 function usePageChrome() {
   useEffect(() => {
     const prevHtmlBg = document.documentElement.style.background;
@@ -123,6 +117,15 @@ export default function DiscogsWantList() {
   const [view, setView] = useState("add"); // add | byItem | byPerson
   const [personFilter, setPersonFilter] = useState("all");
   const [toast, setToast] = useState(null);
+
+  // "Want" popup — used both when adding a Discogs search result (source:
+  // "search") and when grabbing someone else's item for your own list
+  // (source: "other"). Search-flow adds already have a name via the field
+  // above, so only "other" needs its own name input.
+  const [wantModal, setWantModal] = useState(null); // { source: "search" | "other", item }
+  const [modalNotes, setModalNotes] = useState("");
+  const [modalForName, setModalForName] = useState("");
+  const [expandedUnwanted, setExpandedUnwanted] = useState({}); // { [personName]: bool }
 
   // Spreadsheet upload
   const fileInputRef = useRef(null);
@@ -206,26 +209,47 @@ export default function DiscogsWantList() {
     }
   };
 
-  const addEntry = async (item) => {
-    if (!name.trim()) {
-      showToast("Add your name first");
+  const deriveGenre = (item) => {
+    if (item.genre && !Array.isArray(item.genre)) return item.genre || null;
+    const list = (item.genre && item.genre.length ? item.genre : item.style) || [];
+    return list.length ? list.join(", ") : null;
+  };
+
+  const openWantModal = (item, source) => {
+    setModalNotes("");
+    setModalForName(source === "other" ? "" : name);
+    setWantModal({ source, item });
+  };
+
+  const closeWantModal = () => {
+    setWantModal(null);
+    setModalNotes("");
+    setModalForName("");
+  };
+
+  const submitWantModal = async () => {
+    if (!wantModal) return;
+    const finalName = (wantModal.source === "other" ? modalForName : name).trim();
+    if (!finalName) {
+      showToast("Add a name first");
       return;
     }
+    const item = wantModal.item;
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: name.trim(),
+      name: finalName,
       title: item.title,
       thumb: item.thumb || item.cover_image || null,
-      url: item.uri ? `https://www.discogs.com${item.uri}` : null,
-      notes: notes.trim() || null,
-      genre: (item.genre && item.genre.length ? item.genre : item.style && item.style.length ? item.style : []).join(", ") || null,
+      url: item.uri ? `https://www.discogs.com${item.uri}` : item.url || null,
+      notes: modalNotes.trim() || null,
+      genre: deriveGenre(item),
     };
     try {
       const { error } = await supabase.from("wantlist_entries").insert([entry]);
       if (error) throw error;
       setEntries((prev) => [{ ...entry, addedAt: new Date().toISOString() }, ...prev]);
-      setNotes("");
-      showToast(`Added "${item.title}" to your want list`);
+      showToast(`Added "${item.title}" for ${finalName}`);
+      closeWantModal();
     } catch (e) {
       showToast("Couldn't save that item — try again");
     }
@@ -412,16 +436,20 @@ export default function DiscogsWantList() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const removeEntry = async (id) => {
+  const setUnwanted = async (id, unwanted) => {
     const prev = entries;
-    setEntries((e) => e.filter((x) => x.id !== id)); // optimistic
+    setEntries((e) => e.map((x) => (x.id === id ? { ...x, unwanted } : x))); // optimistic
     try {
-      const { error } = await supabase.from("wantlist_entries").delete().eq("id", id);
+      const { error } = await supabase.from("wantlist_entries").update({ unwanted }).eq("id", id);
       if (error) throw error;
     } catch (e) {
       setEntries(prev); // roll back on failure
-      showToast("Couldn't remove that item — try again");
+      showToast(unwanted ? "Couldn't move that item — try again" : "Couldn't restore that item — try again");
     }
+  };
+
+  const toggleUnwantedSection = (personName) => {
+    setExpandedUnwanted((s) => ({ ...s, [personName]: !s[personName] }));
   };
 
   const toggleFound = async (id) => {
@@ -439,9 +467,11 @@ export default function DiscogsWantList() {
     }
   };
 
-  // Group by item title
+  // Group by item title (unwanted entries are excluded — they're parked in
+  // each person's Unwanted section instead)
   const byItem = {};
   entries.forEach((e) => {
+    if (e.unwanted) return;
     if (!byItem[e.title]) byItem[e.title] = { title: e.title, thumb: e.thumb, url: e.url || null, people: [] };
     if (!byItem[e.title].url && e.url) byItem[e.title].url = e.url;
     byItem[e.title].people.push(e);
@@ -646,33 +676,6 @@ export default function DiscogsWantList() {
               </button>
             </div>
 
-            <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
-              NOTES <span style={{ color: "#6B6B6B", fontWeight: 400, letterSpacing: 0 }}>(optional)</span>
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any pressing is fine / looking for the Japanese pressing specifically / etc."
-              rows={2}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #2A2A2A",
-                background: "#121212",
-                color: "#F5F0EC",
-                fontSize: 13.5,
-                boxSizing: "border-box",
-                outline: "none",
-                resize: "vertical",
-                fontFamily: "'Barlow', sans-serif",
-                marginBottom: 6,
-              }}
-            />
-            <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 20px 2px" }}>
-              Attached to the next item you add — search above, or add by hand below
-            </p>
-
             {searchError && (
               <div
                 style={{
@@ -746,7 +749,7 @@ export default function DiscogsWantList() {
                       </div>
                     </div>
                     <button
-                      onClick={() => addEntry(item)}
+                      onClick={() => openWantModal(item, "search")}
                       disabled={!name.trim()}
                       title={!name.trim() ? "Add your name first" : undefined}
                       style={{
@@ -885,6 +888,24 @@ export default function DiscogsWantList() {
                       color: "#F5F0EC",
                       fontSize: 14,
                       outline: "none",
+                    }}
+                  />
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Any pressing is fine / needs OBI / would pay $___"
+                    rows={2}
+                    style={{
+                      padding: "9px 10px",
+                      borderRadius: 7,
+                      border: "1px solid #2A2A2A",
+                      background: "#000000",
+                      color: "#F5F0EC",
+                      fontSize: 13.5,
+                      boxSizing: "border-box",
+                      outline: "none",
+                      resize: "vertical",
+                      fontFamily: "'Barlow', sans-serif",
                     }}
                   />
                   <button
@@ -1198,7 +1219,11 @@ export default function DiscogsWantList() {
             ) : (
               personGroups
                 .filter((p) => personFilter === "all" || p.name === personFilter)
-                .map((p) => (
+                .map((p) => {
+                  const isOwnSection = name.trim() && p.name.trim().toLowerCase() === name.trim().toLowerCase();
+                  const activeItems = p.items.filter((item) => !item.unwanted);
+                  const unwantedItems = p.items.filter((item) => item.unwanted);
+                  return (
                 <div key={p.name} style={{ marginBottom: 22 }}>
                   <div
                     style={{
@@ -1211,10 +1236,10 @@ export default function DiscogsWantList() {
                     <User size={14} color="#E11B23" />
                     <span style={{ fontSize: 14.5, fontWeight: 600, color: "#F5F0EC" }}>{p.name}</span>
                     <span className="mono" style={{ fontSize: 11, color: "#9A9A9A" }}>
-                      {p.items.length} item{p.items.length !== 1 ? "s" : ""}
+                      {activeItems.length} item{activeItems.length !== 1 ? "s" : ""}
                     </span>
                   </div>
-                  {p.items.map((item) => (
+                  {activeItems.map((item) => (
                     <div
                       key={item.id}
                       className="entry-row"
@@ -1284,6 +1309,29 @@ export default function DiscogsWantList() {
                           </span>
                         )}
                       </div>
+                      {!isOwnSection && (
+                        <button
+                          onClick={() => openWantModal(item, "other")}
+                          title="Add this to your own want list"
+                          style={{
+                            background: "none",
+                            border: "1px solid #E11B23",
+                            color: "#F5F0EC",
+                            cursor: "pointer",
+                            padding: "4px 8px",
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Plus size={12} />
+                          Want
+                        </button>
+                      )}
                       <button
                         onClick={() => toggleFound(item.id)}
                         title={item.found ? "Mark as still wanted" : "Mark as found"}
@@ -1305,12 +1353,8 @@ export default function DiscogsWantList() {
                         {item.found ? "Found" : "Mark found"}
                       </button>
                       <button
-                        onClick={() => {
-                          if (window.confirm(`Remove "${item.title}" from ${p.name}'s want list?`)) {
-                            removeEntry(item.id);
-                          }
-                        }}
-                        title="Remove"
+                        onClick={() => setUnwanted(item.id, true)}
+                        title="Move to Unwanted"
                         style={{
                           background: "none",
                           border: "none",
@@ -1324,12 +1368,205 @@ export default function DiscogsWantList() {
                       </button>
                     </div>
                   ))}
+                  {unwantedItems.length > 0 && (
+                    <div style={{ marginTop: 4, paddingLeft: 22 }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleUnwantedSection(p.name)}
+                        className="mono"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#6B6B6B",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          letterSpacing: 0.5,
+                          cursor: "pointer",
+                          padding: "4px 0",
+                        }}
+                      >
+                        {expandedUnwanted[p.name] ? "▾" : "▸"} Unwanted ({unwantedItems.length})
+                      </button>
+                      {expandedUnwanted[p.name] &&
+                        unwantedItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="entry-row"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                              gap: 8,
+                              padding: "6px 4px 6px 22px",
+                              opacity: 0.5,
+                            }}
+                          >
+                            <RecordThumb src={item.thumb} alt={item.title} size={28} />
+                            <div style={{ flex: 1, minWidth: 160 }}>
+                              <span style={{ fontSize: 13, color: "#9A9A9A", textDecoration: "line-through" }}>
+                                {item.title}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setUnwanted(item.id, false)}
+                              title="Restore to want list"
+                              style={{
+                                background: "none",
+                                border: "1px solid #2A2A2A",
+                                color: "#9A9A9A",
+                                cursor: "pointer",
+                                padding: "4px 8px",
+                                borderRadius: 6,
+                                fontSize: 11,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                flexShrink: 0,
+                              }}
+                            >
+                              <RotateCcw size={12} />
+                              Restore
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
-              ))
+                  );
+                })
             )}
           </div>
         )}
       </div>
+
+      {wantModal && (
+        <div
+          onClick={closeWantModal}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 380,
+              background: "#121212",
+              border: "1px solid #2A2A2A",
+              borderRadius: 12,
+              padding: 20,
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <RecordThumb src={wantModal.item.thumb || wantModal.item.cover_image} alt={wantModal.item.title} size={42} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "#F5F0EC",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {wantModal.item.title}
+                </div>
+                {wantModal.source === "search" && (
+                  <div className="mono" style={{ fontSize: 11, color: "#9A9A9A" }}>for {name.trim() || "—"}</div>
+                )}
+              </div>
+              <button
+                onClick={closeWantModal}
+                title="Cancel"
+                style={{ background: "none", border: "none", color: "#9A9A9A", cursor: "pointer", flexShrink: 0, padding: 4 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {wantModal.source === "other" && (
+              <>
+                <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
+                  YOUR NAME <span style={{ color: "#E11B23" }}>*</span>
+                </label>
+                <input
+                  value={modalForName}
+                  onChange={(e) => setModalForName(e.target.value)}
+                  placeholder="e.g. Jamie R."
+                  autoFocus
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: modalForName.trim() ? "1px solid #2A2A2A" : "1px solid #7A0E12",
+                    background: "#000000",
+                    color: "#F5F0EC",
+                    fontSize: 14.5,
+                    boxSizing: "border-box",
+                    outline: "none",
+                    marginBottom: 14,
+                  }}
+                />
+              </>
+            )}
+
+            <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
+              NOTES <span style={{ color: "#6B6B6B", fontWeight: 400, letterSpacing: 0 }}>(optional)</span>
+            </label>
+            <textarea
+              value={modalNotes}
+              onChange={(e) => setModalNotes(e.target.value)}
+              placeholder="Any pressing is fine / needs OBI / would pay $___"
+              rows={3}
+              autoFocus={wantModal.source === "search"}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitWantModal();
+              }}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #2A2A2A",
+                background: "#000000",
+                color: "#F5F0EC",
+                fontSize: 13.5,
+                boxSizing: "border-box",
+                outline: "none",
+                resize: "vertical",
+                fontFamily: "'Barlow', sans-serif",
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={submitWantModal}
+              style={{
+                width: "100%",
+                marginTop: 14,
+                padding: "10px 16px",
+                borderRadius: 8,
+                border: "none",
+                background: "#E11B23",
+                color: "#F5F0EC",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div
