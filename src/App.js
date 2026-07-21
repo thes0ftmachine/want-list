@@ -46,6 +46,39 @@ function useFonts() {
   }, []);
 }
 
+// Makes the actual page (not just our component) black edge-to-edge, and
+// stops mobile browsers from auto-zooming/panning when a text field is
+// focused — that zoom is what caused the "jumps left and zooms in" feel.
+function usePageChrome() {
+  useEffect(() => {
+    const prevHtmlBg = document.documentElement.style.background;
+    const prevBodyBg = document.body.style.background;
+    const prevBodyMargin = document.body.style.margin;
+    document.documentElement.style.background = "#000000";
+    document.body.style.background = "#000000";
+    document.body.style.margin = "0";
+
+    let meta = document.querySelector('meta[name="viewport"]');
+    const prevContent = meta ? meta.getAttribute("content") : null;
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "viewport";
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    );
+
+    return () => {
+      document.documentElement.style.background = prevHtmlBg;
+      document.body.style.background = prevBodyBg;
+      document.body.style.margin = prevBodyMargin;
+      if (meta && prevContent !== null) meta.setAttribute("content", prevContent);
+    };
+  }, []);
+}
+
 function RecordThumb({ src, alt, size = 56 }) {
   return (
     <div
@@ -74,6 +107,7 @@ function RecordThumb({ src, alt, size = 56 }) {
 
 export default function DiscogsWantList() {
   useFonts();
+  usePageChrome();
 
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
@@ -454,7 +488,7 @@ export default function DiscogsWantList() {
         /* Mobile: prevent iOS Safari from auto-zooming when an input is
            focused (it does this automatically for any input under 16px) */
         @media (max-width: 640px) {
-          input, .file-upload-btn { font-size: 16px !important; }
+          input, textarea, select, .file-upload-btn { font-size: 16px !important; }
         }
 
         /* Mobile: tighter outer padding and slightly larger tap targets */
@@ -561,7 +595,7 @@ export default function DiscogsWantList() {
               />
             </div>
             <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 20px 2px" }}>
-              Required — every item gets tied to your name, be sure to enter it the same way for each item.
+              Required: every item gets tied to your name, be sure to enter it the same way each time.
             </p>
 
             <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
