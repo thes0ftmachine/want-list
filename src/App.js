@@ -1,6 +1,6 @@
 import React from "react";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote, RotateCcw } from "lucide-react";
+import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote, RotateCcw, Package, PauseCircle, Truck } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
 
@@ -12,6 +12,14 @@ const FONT_LINK = "https://fonts.googleapis.com/css2?family=Playfair+Display:ita
 const SUPABASE_URL = "https://gwzsxzdgqqtuukuexcut.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd3enN4emRncXF0dXVrdWV4Y3V0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NzI4NTYsImV4cCI6MjEwMDE0ODg1Nn0._fVYWwEKfFvYQTVY2SmRSkoiE3WmjQGUA22OnsEtOqU";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// The three states an item can be in once it's been found. Easy to update —
+// just change label text here, or add another status to this list.
+const STATUS_CONFIG = {
+  picked: { label: "Picked", icon: Package, color: "#76cdec" },
+  on_hold: { label: "On Hold", icon: PauseCircle, color: "#C99A3A" },
+  picked_up: { label: "Picked Up", icon: Truck, color: "#6FA987" },
+};
 
 // Discogs personal access token — unlocks thumb/cover_image data on search results.
 const DISCOGS_TOKEN = "dYpwRhhtUGpiisteXZdsylSdXTVVAWNvMtdPEWFV";
@@ -82,7 +90,7 @@ function RecordThumb({ src, alt, size = 56 }) {
         borderRadius: 6,
         overflow: "hidden",
         flexShrink: 0,
-        border: "2px solid #E11B23",
+        border: "1px solid #2A2A2A",
         background: "#000000",
         display: "flex",
         alignItems: "center",
@@ -127,6 +135,10 @@ export default function DiscogsWantList() {
   const [modalForName, setModalForName] = useState("");
   const [expandedUnwanted, setExpandedUnwanted] = useState({}); // { [personName]: bool }
   const [collapsedPeople, setCollapsedPeople] = useState({}); // { [personName]: bool } — true = collapsed
+
+  // Status popup — opens when marking an item found (or changing status
+  // later). { id, title, current } | null
+  const [statusModal, setStatusModal] = useState(null);
 
   // Spreadsheet upload
   const fileInputRef = useRef(null);
@@ -453,18 +465,15 @@ export default function DiscogsWantList() {
     setExpandedUnwanted((s) => ({ ...s, [personName]: !s[personName] }));
   };
 
-  const toggleFound = async (id) => {
-    const target = entries.find((e) => e.id === id);
-    if (!target) return;
-    const nextFound = !target.found;
+  const setItemStatus = async (id, status) => {
     const prev = entries;
-    setEntries((e) => e.map((x) => (x.id === id ? { ...x, found: nextFound } : x))); // optimistic
+    setEntries((e) => e.map((x) => (x.id === id ? { ...x, status, found: !!status } : x))); // optimistic
     try {
-      const { error } = await supabase.from("wantlist_entries").update({ found: nextFound }).eq("id", id);
+      const { error } = await supabase.from("wantlist_entries").update({ status, found: !!status }).eq("id", id);
       if (error) throw error;
     } catch (e) {
       setEntries(prev); // roll back on failure
-      showToast("Couldn't update that item — try again");
+      showToast("Couldn't update status — try again");
     }
   };
 
@@ -1155,46 +1164,42 @@ export default function DiscogsWantList() {
                       </div>
                     )}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                      {g.people.map((p) => (
+                      {g.people.map((p) => {
+                        const statusInfo = p.status ? STATUS_CONFIG[p.status] : null;
+                        const StatusIcon = statusInfo ? statusInfo.icon : null;
+                        return (
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => {
-                            if (p.found) {
-                              toggleFound(p.id);
-                              return;
-                            }
-                            if (window.confirm(`Mark "${g.title}" as found for ${p.name}?`)) {
-                              toggleFound(p.id);
-                            }
-                          }}
+                          onClick={() => setStatusModal({ id: p.id, title: g.title, current: p.status || null })}
                           className="mono"
-                          title={p.found ? "Mark as still wanted" : "Mark as found"}
+                          title={statusInfo ? `Status: ${statusInfo.label} — click to change` : "Mark as found"}
                           style={{
                             fontSize: 11,
-                            background: p.found ? "#0F1A14" : "#121212",
-                            color: p.found ? "#6FA987" : "#E11B23",
+                            background: statusInfo ? "#161616" : "#121212",
+                            color: statusInfo ? statusInfo.color : "#E11B23",
                             padding: "3px 8px",
                             borderRadius: 20,
-                            border: `1px solid ${p.found ? "#2E5240" : "#2A2A2A"}`,
-                            textDecoration: p.found ? "line-through" : "none",
+                            border: `1px solid ${statusInfo ? statusInfo.color + "55" : "#2A2A2A"}`,
+                            textDecoration: "none",
                             cursor: "pointer",
                             display: "inline-flex",
                             alignItems: "center",
                             gap: 4,
                           }}
                         >
-                          {p.found && <CheckCircle2 size={11} color="#6FA987" />}
+                          {StatusIcon && <StatusIcon size={11} color={statusInfo.color} />}
                           {p.name}
                           {p.notes && (
                             <StickyNote
                               size={11}
-                              color={p.found ? "#6FA987" : "#9A9A9A"}
+                              color={statusInfo ? statusInfo.color : "#9A9A9A"}
                               title={p.notes}
                             />
                           )}
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                   <button
@@ -1254,11 +1259,13 @@ export default function DiscogsWantList() {
                   }}
                 >
                   <option value="all">All ({personGroups.length})</option>
-                  {personGroups.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.name} ({p.items.length})
-                    </option>
-                  ))}
+                  {[...personGroups]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name} ({p.items.length})
+                      </option>
+                    ))}
                 </select>
               </div>
             )}
@@ -1271,7 +1278,12 @@ export default function DiscogsWantList() {
                 .filter((p) => personFilter === "all" || p.name === personFilter)
                 .map((p) => {
                   const isOwnSection = name.trim() && p.name.trim().toLowerCase() === name.trim().toLowerCase();
-                  const activeItems = p.items.filter((item) => !item.unwanted);
+                  const activeItems = p.items.filter((item) => !item.unwanted && !item.status);
+                  const statusBuckets = {
+                    picked: p.items.filter((item) => !item.unwanted && item.status === "picked"),
+                    on_hold: p.items.filter((item) => !item.unwanted && item.status === "on_hold"),
+                    picked_up: p.items.filter((item) => !item.unwanted && item.status === "picked_up"),
+                  };
                   const unwantedItems = p.items.filter((item) => item.unwanted);
                   return (
                 <div key={p.name} style={{ marginBottom: 22 }}>
@@ -1297,7 +1309,10 @@ export default function DiscogsWantList() {
                     <User size={14} color="#E11B23" />
                     <span style={{ fontSize: 14.5, fontWeight: 600, color: "#F5F0EC" }}>{p.name}</span>
                     <span className="mono" style={{ fontSize: 11, color: "#9A9A9A" }}>
-                      {activeItems.length} item{activeItems.length !== 1 ? "s" : ""}
+                      {(() => {
+                        const total = activeItems.length + statusBuckets.picked.length + statusBuckets.on_hold.length + statusBuckets.picked_up.length;
+                        return `${total} item${total !== 1 ? "s" : ""}`;
+                      })()}
                     </span>
                   </button>
                   {!collapsedPeople[p.name] && (
@@ -1323,24 +1338,16 @@ export default function DiscogsWantList() {
                             rel="noopener noreferrer"
                             style={{
                               fontSize: 13.5,
-                              color: item.found ? "#6B6B6B" : "#D8D3CC",
-                              textDecoration: item.found ? "line-through" : "none",
-                              borderBottom: item.found ? "none" : "1px solid #E11B23",
+                              color: "#D8D3CC",
+                              textDecoration: "none",
+                              borderBottom: "1px solid #E11B23",
                               width: "fit-content",
                             }}
                           >
                             {item.title}
                           </a>
                         ) : (
-                          <span
-                            style={{
-                              fontSize: 13.5,
-                              color: item.found ? "#6B6B6B" : "#D8D3CC",
-                              textDecoration: item.found ? "line-through" : "none",
-                            }}
-                          >
-                            {item.title}
-                          </span>
+                          <span style={{ fontSize: 13.5, color: "#D8D3CC" }}>{item.title}</span>
                         )}
                         {item.notes && (
                           <span
@@ -1396,20 +1403,12 @@ export default function DiscogsWantList() {
                         </button>
                       )}
                       <button
-                        onClick={() => {
-                          if (item.found) {
-                            toggleFound(item.id);
-                            return;
-                          }
-                          if (window.confirm(`Mark "${item.title}" as found?`)) {
-                            toggleFound(item.id);
-                          }
-                        }}
-                        title={item.found ? "Mark as still wanted" : "Mark as found"}
+                        onClick={() => setStatusModal({ id: item.id, title: item.title, current: null })}
+                        title="Mark found — choose a status"
                         style={{
                           background: "none",
-                          border: `1px solid ${item.found ? "#2E5240" : "#2A2A2A"}`,
-                          color: item.found ? "#6FA987" : "#9A9A9A",
+                          border: "1px solid #2A2A2A",
+                          color: "#9A9A9A",
                           cursor: "pointer",
                           padding: "4px 8px",
                           borderRadius: 6,
@@ -1421,7 +1420,7 @@ export default function DiscogsWantList() {
                         }}
                       >
                         <CheckCircle2 size={12} />
-                        {item.found ? "Found" : "Mark found"}
+                        Mark found
                       </button>
                       <button
                         onClick={() => setUnwanted(item.id, true)}
@@ -1439,6 +1438,114 @@ export default function DiscogsWantList() {
                       </button>
                     </div>
                   ))}
+
+                  {["picked", "on_hold", "picked_up"].map((statusKey) => {
+                    const bucket = statusBuckets[statusKey];
+                    if (bucket.length === 0) return null;
+                    const { label, icon: BucketIcon, color } = STATUS_CONFIG[statusKey];
+                    return (
+                      <div key={statusKey} style={{ marginTop: 10, paddingLeft: 22 }}>
+                        <div
+                          className="mono"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            color,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            letterSpacing: 0.5,
+                            padding: "4px 0",
+                          }}
+                        >
+                          <BucketIcon size={13} />
+                          {label} ({bucket.length})
+                        </div>
+                        {bucket.map((item) => (
+                          <div
+                            key={item.id}
+                            className="entry-row"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                              gap: 8,
+                              padding: "6px 4px 6px 22px",
+                            }}
+                          >
+                            <RecordThumb src={item.thumb} alt={item.title} size={30} />
+                            <div style={{ flex: 1, minWidth: 160, display: "flex", flexDirection: "column" }}>
+                              {item.url ? (
+                                <a
+                                  href={item.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    fontSize: 13,
+                                    color: "#D8D3CC",
+                                    textDecoration: "none",
+                                    borderBottom: "1px solid #E11B23",
+                                    width: "fit-content",
+                                  }}
+                                >
+                                  {item.title}
+                                </a>
+                              ) : (
+                                <span style={{ fontSize: 13, color: "#D8D3CC" }}>{item.title}</span>
+                              )}
+                              {item.notes && (
+                                <span style={{ fontSize: 11, color: "#6B6B6B", fontStyle: "italic", marginTop: 2 }}>
+                                  {item.notes}
+                                </span>
+                              )}
+                            </div>
+                            {!isOwnSection && (
+                              <button
+                                onClick={() => openWantModal(item, "other")}
+                                title="Add this to your own want list"
+                                style={{
+                                  background: "none",
+                                  border: "1px solid #E11B23",
+                                  color: "#F5F0EC",
+                                  cursor: "pointer",
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <Plus size={12} />
+                                Want
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setStatusModal({ id: item.id, title: item.title, current: item.status })}
+                              title="Change status"
+                              style={{
+                                background: "none",
+                                border: `1px solid ${color}55`,
+                                color,
+                                cursor: "pointer",
+                                padding: "4px 8px",
+                                borderRadius: 6,
+                                fontSize: 11,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                flexShrink: 0,
+                              }}
+                            >
+                              Change
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
                   {unwantedItems.length > 0 && (
                     <div style={{ marginTop: 4, paddingLeft: 22 }}>
                       <button
@@ -1636,6 +1743,125 @@ export default function DiscogsWantList() {
               }}
             >
               Add
+            </button>
+          </div>
+        </div>
+      )}
+
+      {statusModal && (
+        <div
+          onClick={() => setStatusModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 340,
+              background: "#121212",
+              border: "1px solid #2A2A2A",
+              borderRadius: 12,
+              padding: 20,
+              boxSizing: "border-box",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: "#F5F0EC",
+                marginBottom: 4,
+              }}
+            >
+              {statusModal.title}
+            </div>
+            <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", marginTop: 0, marginBottom: 16 }}>
+              Update status
+            </p>
+
+            {Object.entries(STATUS_CONFIG).map(([key, { label, icon: Icon, color }]) => {
+              const isCurrent = statusModal.current === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={async () => {
+                    await setItemStatus(statusModal.id, key);
+                    setStatusModal(null);
+                  }}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${isCurrent ? color : "#2A2A2A"}`,
+                    background: isCurrent ? `${color}18` : "#000000",
+                    color: isCurrent ? color : "#F5F0EC",
+                    fontSize: 14,
+                    fontWeight: isCurrent ? 600 : 500,
+                    cursor: "pointer",
+                    marginBottom: 8,
+                  }}
+                >
+                  <Icon size={16} color={color} />
+                  {label}
+                  {isCurrent && <CheckCircle2 size={14} color={color} style={{ marginLeft: "auto" }} />}
+                </button>
+              );
+            })}
+
+            {statusModal.current && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await setItemStatus(statusModal.id, null);
+                  setStatusModal(null);
+                }}
+                className="mono"
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #2A2A2A",
+                  background: "transparent",
+                  color: "#9A9A9A",
+                  fontSize: 11.5,
+                  cursor: "pointer",
+                  marginTop: 4,
+                }}
+              >
+                Clear — mark as still wanted
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setStatusModal(null)}
+              className="mono"
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "none",
+                background: "transparent",
+                color: "#6B6B6B",
+                fontSize: 11.5,
+                cursor: "pointer",
+                marginTop: 4,
+              }}
+            >
+              Cancel
             </button>
           </div>
         </div>
