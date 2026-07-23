@@ -16,7 +16,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // The three states an item can be in once it's been found. Easy to update —
 // just change label text here, or add another status to this list.
 const STATUS_CONFIG = {
-  picked: { label: "Picked", icon: Package, color: "#6db7d9" },
+  picked: { label: "Picked", icon: Package, color: "#91c1d4" },
   on_hold: { label: "On Hold", icon: PauseCircle, color: "#C99A3A" },
   picked_up: { label: "Picked Up", icon: Truck, color: "#6FA987" },
 };
@@ -81,9 +81,11 @@ function usePageChrome() {
   }, []);
 }
 
-function RecordThumb({ src, alt, size = 56 }) {
+function RecordThumb({ src, alt, size = 56, onClick }) {
+  const clickable = !!(src && onClick);
   return (
     <div
+      onClick={clickable ? onClick : undefined}
       style={{
         width: size,
         height: size,
@@ -95,6 +97,7 @@ function RecordThumb({ src, alt, size = 56 }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        cursor: clickable ? "pointer" : "default",
       }}
       className="record-thumb"
     >
@@ -143,6 +146,9 @@ export default function DiscogsWantList() {
   // Edit-notes popup — opens via the pencil icon on any existing want.
   // { id, title, value } | null
   const [noteEditModal, setNoteEditModal] = useState(null);
+
+  // Thumbnail lightbox — { src, alt } | null
+  const [imagePreview, setImagePreview] = useState(null);
 
   // Spreadsheet upload
   const fileInputRef = useRef(null);
@@ -1154,7 +1160,12 @@ export default function DiscogsWantList() {
                     borderBottom: "1px solid #2A2A2A",
                   }}
                 >
-                  <RecordThumb src={g.thumb} alt={g.title} size={52} />
+                  <RecordThumb
+                    src={g.thumb}
+                    alt={g.title}
+                    size={52}
+                    onClick={() => setImagePreview({ src: g.thumb, alt: g.title })}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {g.url ? (
                       <a
@@ -1347,7 +1358,12 @@ export default function DiscogsWantList() {
                         padding: "8px 4px 8px 22px",
                       }}
                     >
-                      <RecordThumb src={item.thumb} alt={item.title} size={34} />
+                      <RecordThumb
+                        src={item.thumb}
+                        alt={item.title}
+                        size={34}
+                        onClick={() => setImagePreview({ src: item.thumb, alt: item.title })}
+                      />
                       <div style={{ flex: 1, minWidth: 160, display: "flex", flexDirection: "column" }}>
                         {item.url ? (
                           <a
@@ -1507,7 +1523,12 @@ export default function DiscogsWantList() {
                               padding: "6px 4px 6px 22px",
                             }}
                           >
-                            <RecordThumb src={item.thumb} alt={item.title} size={30} />
+                            <RecordThumb
+                              src={item.thumb}
+                              alt={item.title}
+                              size={30}
+                              onClick={() => setImagePreview({ src: item.thumb, alt: item.title })}
+                            />
                             <div style={{ flex: 1, minWidth: 160, display: "flex", flexDirection: "column" }}>
                               {item.url ? (
                                 <a
@@ -1629,7 +1650,12 @@ export default function DiscogsWantList() {
                               opacity: 0.5,
                             }}
                           >
-                            <RecordThumb src={item.thumb} alt={item.title} size={28} />
+                            <RecordThumb
+                              src={item.thumb}
+                              alt={item.title}
+                              size={28}
+                              onClick={() => setImagePreview({ src: item.thumb, alt: item.title })}
+                            />
                             <div style={{ flex: 1, minWidth: 160 }}>
                               <span style={{ fontSize: 13, color: "#9A9A9A", textDecoration: "line-through" }}>
                                 {item.title}
@@ -2011,6 +2037,57 @@ export default function DiscogsWantList() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {imagePreview && (
+        <div
+          onClick={() => setImagePreview(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.88)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            zIndex: 1100,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setImagePreview(null)}
+            title="Close"
+            style={{
+              position: "fixed",
+              top: 16,
+              right: 16,
+              background: "rgba(18,18,18,0.9)",
+              border: "1px solid #2A2A2A",
+              color: "#F5F0EC",
+              borderRadius: 8,
+              padding: 8,
+              cursor: "pointer",
+              zIndex: 1101,
+            }}
+          >
+            <X size={18} />
+          </button>
+          <img
+            src={imagePreview.src}
+            alt={imagePreview.alt}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "90vw",
+              maxHeight: "85vh",
+              width: "auto",
+              height: "auto",
+              objectFit: "contain",
+              borderRadius: 8,
+              border: "1px solid #2A2A2A",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
+            }}
+          />
         </div>
       )}
 
