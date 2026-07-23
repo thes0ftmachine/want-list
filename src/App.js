@@ -1,6 +1,6 @@
 import React from "react";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote, RotateCcw, Package, PauseCircle, Truck } from "lucide-react";
+import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote, RotateCcw, Package, PauseCircle, Truck, Pencil } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
 
@@ -16,7 +16,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // The three states an item can be in once it's been found. Easy to update —
 // just change label text here, or add another status to this list.
 const STATUS_CONFIG = {
-  picked: { label: "Picked", icon: Package, color: "#76cdec" },
+  picked: { label: "Picked", icon: Package, color: "#6db7d9" },
   on_hold: { label: "On Hold", icon: PauseCircle, color: "#C99A3A" },
   picked_up: { label: "Picked Up", icon: Truck, color: "#6FA987" },
 };
@@ -139,6 +139,10 @@ export default function DiscogsWantList() {
   // Status popup — opens when marking an item found (or changing status
   // later). { id, title, current } | null
   const [statusModal, setStatusModal] = useState(null);
+
+  // Edit-notes popup — opens via the pencil icon on any existing want.
+  // { id, title, value } | null
+  const [noteEditModal, setNoteEditModal] = useState(null);
 
   // Spreadsheet upload
   const fileInputRef = useRef(null);
@@ -474,6 +478,20 @@ export default function DiscogsWantList() {
     } catch (e) {
       setEntries(prev); // roll back on failure
       showToast("Couldn't update status — try again");
+    }
+  };
+
+  const updateNotes = async (id, newNotes) => {
+    const trimmed = (newNotes || "").trim() || null;
+    const prev = entries;
+    setEntries((e) => e.map((x) => (x.id === id ? { ...x, notes: trimmed } : x))); // optimistic
+    try {
+      const { error } = await supabase.from("wantlist_entries").update({ notes: trimmed }).eq("id", id);
+      if (error) throw error;
+      showToast("Note updated");
+    } catch (e) {
+      setEntries(prev); // roll back on failure
+      showToast("Couldn't update note — try again");
     }
   };
 
@@ -1379,6 +1397,22 @@ export default function DiscogsWantList() {
                           </span>
                         )}
                       </div>
+                      <button
+                        onClick={() =>
+                          setNoteEditModal({ id: item.id, title: item.title, value: item.notes || "" })
+                        }
+                        title="Edit note"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#6B6B6B",
+                          cursor: "pointer",
+                          padding: 4,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Pencil size={14} />
+                      </button>
                       {!isOwnSection && (
                         <button
                           onClick={() => openWantModal(item, "other")}
@@ -1499,6 +1533,22 @@ export default function DiscogsWantList() {
                                 </span>
                               )}
                             </div>
+                            <button
+                              onClick={() =>
+                                setNoteEditModal({ id: item.id, title: item.title, value: item.notes || "" })
+                              }
+                              title="Edit note"
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "#6B6B6B",
+                                cursor: "pointer",
+                                padding: 4,
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Pencil size={13} />
+                            </button>
                             {!isOwnSection && (
                               <button
                                 onClick={() => openWantModal(item, "other")}
@@ -1863,6 +1913,103 @@ export default function DiscogsWantList() {
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {noteEditModal && (
+        <div
+          onClick={() => setNoteEditModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 380,
+              background: "#121212",
+              border: "1px solid #2A2A2A",
+              borderRadius: 12,
+              padding: 20,
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#F5F0EC", marginBottom: 4 }}>
+              {noteEditModal.title}
+            </div>
+            <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", marginTop: 0, marginBottom: 12 }}>
+              Edit note
+            </p>
+
+            <textarea
+              value={noteEditModal.value}
+              onChange={(e) => setNoteEditModal({ ...noteEditModal, value: e.target.value })}
+              placeholder="Any pressing is fine / needs OBI / would pay $___"
+              rows={3}
+              autoFocus
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #2A2A2A",
+                background: "#000000",
+                color: "#F5F0EC",
+                fontSize: 14,
+                boxSizing: "border-box",
+                outline: "none",
+                resize: "vertical",
+                fontFamily: "'Barlow', sans-serif",
+                marginBottom: 14,
+              }}
+            />
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  await updateNotes(noteEditModal.id, noteEditModal.value);
+                  setNoteEditModal(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: "10px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#E11B23",
+                  color: "#F5F0EC",
+                  fontWeight: 600,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => setNoteEditModal(null)}
+                className="mono"
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 8,
+                  border: "1px solid #2A2A2A",
+                  background: "transparent",
+                  color: "#9A9A9A",
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
