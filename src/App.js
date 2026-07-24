@@ -16,7 +16,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // The three states an item can be in once it's been found. Easy to update —
 // just change label text here, or add another status to this list.
 const STATUS_CONFIG = {
-  picked: { label: "Picked", icon: Package, color: "#91c1d4" },
+  picked: { label: "Picked", icon: Package, color: "#8dd2f1" },
   on_hold: { label: "On Hold", icon: PauseCircle, color: "#C99A3A" },
   picked_up: { label: "Picked Up", icon: Truck, color: "#6FA987" },
 };
@@ -190,11 +190,18 @@ export default function DiscogsWantList() {
     setSearchError(null);
     setResults([]);
     try {
-      const url = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=release&per_page=8&token=${DISCOGS_TOKEN}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("bad response");
-      const data = await res.json();
-      if (!data.results || data.results.length === 0) {
+      // Masters = the album itself, any pressing. Releases = one specific
+      // pressing (country/year/label/format). We show both, labeled, so
+      // someone can want "the album, any copy" or a specific pressing.
+      const masterUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=master&per_page=6&token=${DISCOGS_TOKEN}`;
+      const releaseUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=release&per_page=6&token=${DISCOGS_TOKEN}`;
+      const [masterRes, releaseRes] = await Promise.all([fetch(masterUrl), fetch(releaseUrl)]);
+      if (!masterRes.ok && !releaseRes.ok) throw new Error("bad response");
+      const masterData = masterRes.ok ? await masterRes.json() : { results: [] };
+      const releaseData = releaseRes.ok ? await releaseRes.json() : { results: [] };
+      const combined = [...(masterData.results || []), ...(releaseData.results || [])];
+
+      if (combined.length === 0) {
         setSearchError("No results found on Discogs. Try a different search, or add it by hand below.");
         setManualMode(true);
       } else {
@@ -202,8 +209,8 @@ export default function DiscogsWantList() {
         // authenticated — image data only lives on each item's own
         // release/master resource. Show titles immediately, then fetch each
         // one's real thumbnail in the background and fill it in as it arrives.
-        setResults(data.results);
-        data.results.forEach((item, idx) => {
+        setResults(combined);
+        combined.forEach((item, idx) => {
           if (!item.resource_url) return;
           fetch(`${item.resource_url}?token=${DISCOGS_TOKEN}`)
             .then((r) => (r.ok ? r.json() : null))
@@ -779,7 +786,21 @@ export default function DiscogsWantList() {
                           {item.title}
                         </div>
                       )}
-                      <div className="mono" style={{ fontSize: 11, color: "#9A9A9A" }}>
+                      <div className="mono" style={{ fontSize: 11, color: "#9A9A9A", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        {item.type === "master" && (
+                          <span
+                            style={{
+                              color: "#6FA987",
+                              border: "1px solid #6FA98755",
+                              borderRadius: 4,
+                              padding: "1px 5px",
+                              fontSize: 9.5,
+                              letterSpacing: 0.5,
+                            }}
+                          >
+                            MASTER — ANY PRESSING
+                          </span>
+                        )}
                         {item.year || ""} {item.format ? `· ${item.format.join(", ")}` : ""}
                       </div>
                     </div>
@@ -928,7 +949,7 @@ export default function DiscogsWantList() {
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Any pressing is fine / needs OBI / would pay $___"
+                    placeholder="CD or vinyl / needs OBI / would pay $___"
                     rows={2}
                     style={{
                       padding: "9px 10px",
