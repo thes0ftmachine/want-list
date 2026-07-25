@@ -16,7 +16,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // The three states an item can be in once it's been found. Easy to update —
 // just change label text here, or add another status to this list.
 const STATUS_CONFIG = {
-  picked: { label: "Picked", icon: Package, color: "#8dd2f1" },
+  picked: { label: "Picked", icon: Package, color: "#708BE4" },
   on_hold: { label: "On Hold", icon: PauseCircle, color: "#C99A3A" },
   picked_up: { label: "Picked Up", icon: Truck, color: "#6FA987" },
 };
@@ -127,6 +127,8 @@ export default function DiscogsWantList() {
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [view, setView] = useState("add"); // add | byItem | byPerson
   const [personFilter, setPersonFilter] = useState("all");
+  const [itemGenreFilter, setItemGenreFilter] = useState("all");
+  const [personGenreFilter, setPersonGenreFilter] = useState("all");
   const [toast, setToast] = useState(null);
 
   // "Want" popup — used both when adding a Discogs search result (source:
@@ -138,6 +140,7 @@ export default function DiscogsWantList() {
   const [modalForName, setModalForName] = useState("");
   const [expandedUnwanted, setExpandedUnwanted] = useState({}); // { [personName]: bool }
   const [collapsedPeople, setCollapsedPeople] = useState({}); // { [personName]: bool } — true = collapsed
+  const [collapsedStatusBuckets, setCollapsedStatusBuckets] = useState({}); // { "personName:statusKey": bool } — true = collapsed
 
   // Status popup — opens when marking an item found (or changing status
   // later). { id, title, current } | null
@@ -508,11 +511,39 @@ export default function DiscogsWantList() {
     }
   };
 
+  // "Contains" genre matching — genre is often comma-joined (e.g. "Jazz,
+  // Fusion"), so this checks whether the selected genre appears anywhere in
+  // that string rather than requiring an exact match.
+  const genreMatches = (itemGenre, filter) => {
+    if (filter === "all") return true;
+    if (filter === "uncategorized") return !itemGenre;
+    if (!itemGenre) return false;
+    return itemGenre.toLowerCase().includes(filter.toLowerCase());
+  };
+
+  // Every distinct genre token actually present in the data, built by
+  // splitting comma-joined genre strings apart — so "Jazz, Fusion" offers
+  // both "Jazz" and "Fusion" as separate filter options.
+  const allGenres = Array.from(
+    new Set(
+      entries
+        .filter((e) => e.genre)
+        .flatMap((e) => e.genre.split(",").map((g) => g.trim()))
+        // Drop fragments left over from splitting Discogs' own compound
+        // genre names apart (e.g. "Folk, World, & Country" becomes "Folk",
+        // "World", and a stray "& Country" — that last piece isn't a real
+        // standalone genre, so we exclude it).
+        .filter((g) => g && !/^&/.test(g))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+  const hasUncategorized = entries.some((e) => !e.unwanted && !e.genre);
+
   // Group by item title (unwanted entries are excluded — they're parked in
   // each person's Unwanted section instead)
   const byItem = {};
   entries.forEach((e) => {
     if (e.unwanted) return;
+    if (!genreMatches(e.genre, itemGenreFilter)) return;
     if (!byItem[e.title]) byItem[e.title] = { title: e.title, thumb: e.thumb, url: e.url || null, genre: e.genre || null, people: [] };
     if (!byItem[e.title].url && e.url) byItem[e.title].url = e.url;
     if (!byItem[e.title].genre && e.genre) byItem[e.title].genre = e.genre;
@@ -949,7 +980,7 @@ export default function DiscogsWantList() {
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="CD or vinyl / needs OBI / would pay $___"
+                    placeholder="Any pressing is fine / needs OBI / would pay $___"
                     rows={2}
                     style={{
                       padding: "9px 10px",
@@ -1164,10 +1195,47 @@ export default function DiscogsWantList() {
         {/* BY ITEM VIEW */}
         {view === "byItem" && (
           <div>
+            {allGenres.length > 0 && (
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: "block", fontSize: 11.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
+                  FILTER BY GENRE
+                </label>
+                <select
+                  value={itemGenreFilter}
+                  onChange={(e) => setItemGenreFilter(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #2A2A2A",
+                    background: "#121212",
+                    color: "#F5F0EC",
+                    fontSize: 14,
+                    boxSizing: "border-box",
+                    outline: "none",
+                    fontFamily: "'Barlow', sans-serif",
+                  }}
+                >
+                  <option value="all">All genres</option>
+                  {allGenres.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                  {hasUncategorized && <option value="uncategorized">Uncategorized</option>}
+                </select>
+              </div>
+            )}
             {loadingEntries ? (
               <EmptyState text="Loading the crate…" />
             ) : itemGroups.length === 0 ? (
-              <EmptyState text="No items yet. Be the first to add something you're hunting for." />
+              <EmptyState
+                text={
+                  itemGenreFilter !== "all"
+                    ? "Nothing matches that genre."
+                    : "No items yet. Be the first to add something you're hunting for."
+                }
+              />
             ) : (
               itemGroups.map((g) => (
                 <div
@@ -1287,54 +1355,97 @@ export default function DiscogsWantList() {
         {/* BY PERSON VIEW */}
         {view === "byPerson" && (
           <div>
-            {personGroups.length > 0 && (
-              <div style={{ marginBottom: 18 }}>
-                <label style={{ display: "block", fontSize: 11.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
-                  FILTER BY PERSON
-                </label>
-                <select
-                  value={personFilter}
-                  onChange={(e) => setPersonFilter(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px",
-                    borderRadius: 8,
-                    border: "1px solid #2A2A2A",
-                    background: "#121212",
-                    color: "#F5F0EC",
-                    fontSize: 14,
-                    boxSizing: "border-box",
-                    outline: "none",
-                    fontFamily: "'Barlow', sans-serif",
-                  }}
-                >
-                  <option value="all">All ({personGroups.length})</option>
-                  {[...personGroups]
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((p) => (
-                      <option key={p.name} value={p.name}>
-                        {p.name} ({p.items.length})
-                      </option>
-                    ))}
-                </select>
+            {(personGroups.length > 0 || allGenres.length > 0) && (
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+                {personGroups.length > 0 && (
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <label style={{ display: "block", fontSize: 11.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
+                      FILTER BY PERSON
+                    </label>
+                    <select
+                      value={personFilter}
+                      onChange={(e) => setPersonFilter(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px",
+                        borderRadius: 8,
+                        border: "1px solid #2A2A2A",
+                        background: "#121212",
+                        color: "#F5F0EC",
+                        fontSize: 14,
+                        boxSizing: "border-box",
+                        outline: "none",
+                        fontFamily: "'Barlow', sans-serif",
+                      }}
+                    >
+                      <option value="all">All ({personGroups.length})</option>
+                      {[...personGroups]
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.name} ({p.items.length})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+                {allGenres.length > 0 && (
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <label style={{ display: "block", fontSize: 11.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
+                      FILTER BY GENRE
+                    </label>
+                    <select
+                      value={personGenreFilter}
+                      onChange={(e) => setPersonGenreFilter(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px",
+                        borderRadius: 8,
+                        border: "1px solid #2A2A2A",
+                        background: "#121212",
+                        color: "#F5F0EC",
+                        fontSize: 14,
+                        boxSizing: "border-box",
+                        outline: "none",
+                        fontFamily: "'Barlow', sans-serif",
+                      }}
+                    >
+                      <option value="all">All genres</option>
+                      {allGenres.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                      {hasUncategorized && <option value="uncategorized">Uncategorized</option>}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
-            {loadingEntries ? (
-              <EmptyState text="Loading the crate…" />
-            ) : personGroups.length === 0 ? (
-              <EmptyState text="No one's added a want yet." />
-            ) : (
+            {(() => {
+              const visiblePeople = personGroups.filter((p) => personFilter === "all" || p.name === personFilter);
+              const anyVisible = visiblePeople.some((p) =>
+                p.items.some((item) => genreMatches(item.genre, personGenreFilter))
+              );
+              if (loadingEntries) return <EmptyState text="Loading the crate…" />;
+              if (personGroups.length === 0) return <EmptyState text="No one's added a want yet." />;
+              if (!anyVisible) return <EmptyState text="Nothing matches that filter." />;
+              return null;
+            })()}
+            {!loadingEntries && personGroups.length > 0 && (
               personGroups
                 .filter((p) => personFilter === "all" || p.name === personFilter)
                 .map((p) => {
                   const isOwnSection = name.trim() && p.name.trim().toLowerCase() === name.trim().toLowerCase();
-                  const activeItems = p.items.filter((item) => !item.unwanted && !item.status);
+                  const filteredItems = p.items.filter((item) => genreMatches(item.genre, personGenreFilter));
+                  if (filteredItems.length === 0) return null;
+                  const activeItems = filteredItems.filter((item) => !item.unwanted && !item.status);
                   const statusBuckets = {
-                    picked: p.items.filter((item) => !item.unwanted && item.status === "picked"),
-                    on_hold: p.items.filter((item) => !item.unwanted && item.status === "on_hold"),
-                    picked_up: p.items.filter((item) => !item.unwanted && item.status === "picked_up"),
+                    picked: filteredItems.filter((item) => !item.unwanted && item.status === "picked"),
+                    on_hold: filteredItems.filter((item) => !item.unwanted && item.status === "on_hold"),
+                    picked_up: filteredItems.filter((item) => !item.unwanted && item.status === "picked_up"),
                   };
-                  const unwantedItems = p.items.filter((item) => item.unwanted);
+                  const unwantedItems = filteredItems.filter((item) => item.unwanted);
                   return (
                 <div key={p.name} style={{ marginBottom: 22 }}>
                   <button
@@ -1514,9 +1625,15 @@ export default function DiscogsWantList() {
                     const bucket = statusBuckets[statusKey];
                     if (bucket.length === 0) return null;
                     const { label, icon: BucketIcon, color } = STATUS_CONFIG[statusKey];
+                    const bucketKey = `${p.name}:${statusKey}`;
+                    const isCollapsed = !!collapsedStatusBuckets[bucketKey];
                     return (
                       <div key={statusKey} style={{ marginTop: 10, paddingLeft: 22 }}>
-                        <div
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCollapsedStatusBuckets((prev) => ({ ...prev, [bucketKey]: !prev[bucketKey] }))
+                          }
                           className="mono"
                           style={{
                             display: "flex",
@@ -1527,12 +1644,19 @@ export default function DiscogsWantList() {
                             fontWeight: 600,
                             letterSpacing: 0.5,
                             padding: "4px 0",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            width: "100%",
+                            textAlign: "left",
                           }}
                         >
+                          <span style={{ width: 10, flexShrink: 0 }}>{isCollapsed ? "▸" : "▾"}</span>
                           <BucketIcon size={13} />
                           {label} ({bucket.length})
-                        </div>
-                        {bucket.map((item) => (
+                        </button>
+                        {!isCollapsed &&
+                          bucket.map((item) => (
                           <div
                             key={item.id}
                             className="entry-row"
