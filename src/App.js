@@ -144,6 +144,7 @@ export default function DiscogsWantList() {
   const [itemGenreFilter, setItemGenreFilter] = useState("all");
   const [personGenreFilter, setPersonGenreFilter] = useState("all");
   const [toast, setToast] = useState(null);
+  const [toastSuccess, setToastSuccess] = useState(false);
 
   // "Want" popup — used both when adding a Discogs search result (source:
   // "search") and when grabbing someone else's item for your own list
@@ -202,9 +203,10 @@ export default function DiscogsWantList() {
     }
   };
 
-  const showToast = (msg, playSound = false) => {
+  const showToast = (msg, success = false) => {
     setToast(msg);
-    if (playSound) playDing();
+    setToastSuccess(success);
+    if (success) playDing();
     setTimeout(() => setToast(null), 2200);
   };
 
@@ -624,7 +626,7 @@ export default function DiscogsWantList() {
     try {
       const { error } = await supabase.from("wantlist_entries").update({ notes: trimmed }).eq("id", id);
       if (error) throw error;
-      showToast("Note updated");
+      showToast("Note updated", true);
     } catch (e) {
       setEntries(prev); // roll back on failure
       showToast("Couldn't update note — try again");
@@ -2394,7 +2396,7 @@ export default function DiscogsWantList() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            background: "#E11B23",
+            background: toastSuccess ? "#6FA987" : "#E11B23",
             color: "#F5F0EC",
             padding: "16px 26px",
             borderRadius: 10,
