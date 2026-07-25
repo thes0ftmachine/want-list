@@ -2257,6 +2257,7 @@ export default function DiscogsWantList() {
           {toast}
         </div>
       )}
+      <Analytics />
     </div>
   );
 }
