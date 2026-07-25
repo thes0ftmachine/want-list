@@ -122,7 +122,7 @@ export default function DiscogsWantList() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
   const [manualMode, setManualMode] = useState(false);
-  const [manual, setManual] = useState({ title: "", artist: "", year: "", url: "", genre: "" });
+  const [manual, setManual] = useState({ title: "", artist: "", year: "", url: "", genre: "", format: "" });
 
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -197,8 +197,8 @@ export default function DiscogsWantList() {
       // Masters = the album itself, any pressing. Releases = one specific
       // pressing (country/year/label/format). We show both, labeled, so
       // someone can want "the album, any copy" or a specific pressing.
-      const masterUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=master&per_page=6&token=${DISCOGS_TOKEN}`;
-      const releaseUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=release&per_page=6&token=${DISCOGS_TOKEN}`;
+      const masterUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=master&per_page=12&token=${DISCOGS_TOKEN}`;
+      const releaseUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=release&per_page=12&token=${DISCOGS_TOKEN}`;
       const [masterRes, releaseRes] = await Promise.all([fetch(masterUrl), fetch(releaseUrl)]);
       if (!masterRes.ok && !releaseRes.ok) throw new Error("bad response");
       const masterData = masterRes.ok ? await masterRes.json() : { results: [] };
@@ -249,6 +249,42 @@ export default function DiscogsWantList() {
     return list.length ? list.join(", ") : null;
   };
 
+  // Known Discogs format keywords, in priority order — used to pick one
+  // clean label (e.g. "Vinyl") out of an array like ["Vinyl", "LP", "Album"].
+  const FORMAT_KEYWORDS = ["Vinyl", "CD", "Cassette", "File", "DVD", "Blu-ray", "Box Set"];
+  const deriveFormat = (item) => {
+    if (!item.format) return null;
+    if (typeof item.format === "string") return item.format;
+    if (!item.format.length) return null;
+    const match = item.format.find((f) => FORMAT_KEYWORDS.includes(f));
+    return match || item.format[0];
+  };
+  const formatColor = (format) => {
+    if (!format) return "#9A9A9A";
+    const f = format.toLowerCase();
+    if (f.includes("vinyl")) return "#4CAF50";
+    if (f.includes("cd")) return "#5B9BD5";
+    return "#9A9A9A";
+  };
+
+  // A duplicate is the same person wanting the same title again (case/whitespace
+  // insensitive), excluding anything already moved to Unwanted.
+  const isDuplicate = (personName, title) =>
+    entries.some(
+      (e) =>
+        !e.unwanted &&
+        e.name.trim().toLowerCase() === personName.trim().toLowerCase() &&
+        e.title.trim().toLowerCase() === title.trim().toLowerCase()
+    );
+
+  const confirmDuplicate = (title) =>
+    window.confirm(
+      `You've already added "${title}" to this want list.\n\n` +
+        `If you need to update notes, edit the note on that item instead. ` +
+        `If you're after a different version, you can still add this one — just mention the format you want in your note.\n\n` +
+        `Add it anyway?`
+    );
+
   const openWantModal = (item, source) => {
     setModalNotes("");
     setModalForName(source === "other" ? "" : name);
@@ -269,6 +305,9 @@ export default function DiscogsWantList() {
       return;
     }
     const item = wantModal.item;
+    if (isDuplicate(finalName, item.title) && !confirmDuplicate(item.title)) {
+      return;
+    }
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: finalName,
@@ -277,6 +316,7 @@ export default function DiscogsWantList() {
       url: item.uri ? `https://www.discogs.com${item.uri}` : item.url || null,
       notes: modalNotes.trim() || null,
       genre: deriveGenre(item),
+      format: deriveFormat(item),
     };
     try {
       const { error } = await supabase.from("wantlist_entries").insert([entry]);
@@ -298,21 +338,26 @@ export default function DiscogsWantList() {
       showToast("Add a title");
       return;
     }
+    const title = manual.artist.trim() ? `${manual.artist.trim()} – ${manual.title.trim()}` : manual.title.trim();
+    if (isDuplicate(name, title) && !confirmDuplicate(title)) {
+      return;
+    }
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: name.trim(),
-      title: manual.artist.trim() ? `${manual.artist.trim()} – ${manual.title.trim()}` : manual.title.trim(),
+      title,
       thumb: null,
       year: manual.year.trim(),
       url: manual.url.trim() || null,
       notes: notes.trim() || null,
       genre: manual.genre.trim() || null,
+      format: manual.format.trim() || null,
     };
     try {
       const { error } = await supabase.from("wantlist_entries").insert([entry]);
       if (error) throw error;
       setEntries((prev) => [{ ...entry, addedAt: new Date().toISOString() }, ...prev]);
-      setManual({ title: "", artist: "", year: "", url: "", genre: "" });
+      setManual({ title: "", artist: "", year: "", url: "", genre: "", format: "" });
       setNotes("");
       showToast(`Added "${entry.title}" to your want list`);
     } catch (e) {
@@ -331,6 +376,7 @@ export default function DiscogsWantList() {
     url: ["url", "link", "discogs url", "discogs link"],
     notes: ["notes", "note", "comment", "comments"],
     genre: ["genre", "style", "category"],
+    format: ["format", "media", "media type"],
   };
 
   const findColumn = (headerRow, aliases, claimed) => {
@@ -388,6 +434,8 @@ export default function DiscogsWantList() {
         if (notesCol !== -1) claimed.add(notesCol);
         const genreCol = findColumn(header, COLUMN_ALIASES.genre, claimed);
         if (genreCol !== -1) claimed.add(genreCol);
+        const formatCol = findColumn(header, COLUMN_ALIASES.format, claimed);
+        if (formatCol !== -1) claimed.add(formatCol);
         const nameCol = findColumn(header, COLUMN_ALIASES.name, claimed);
 
         if (titleCol === -1) {
@@ -407,6 +455,7 @@ export default function DiscogsWantList() {
             url: urlCol !== -1 ? (r[urlCol] || "").toString().trim() : "",
             notes: notesCol !== -1 ? (r[notesCol] || "").toString().trim() : "",
             genre: genreCol !== -1 ? (r[genreCol] || "").toString().trim() : "",
+            format: formatCol !== -1 ? (r[formatCol] || "").toString().trim() : "",
           }));
 
         if (parsed.length === 0) {
@@ -445,6 +494,7 @@ export default function DiscogsWantList() {
         url: r.url || null,
         notes: r.notes || null,
         genre: r.genre || null,
+        format: r.format || null,
       };
     });
     try {
@@ -545,9 +595,10 @@ export default function DiscogsWantList() {
   entries.forEach((e) => {
     if (e.unwanted) return;
     if (!genreMatches(e.genre, itemGenreFilter)) return;
-    if (!byItem[e.title]) byItem[e.title] = { title: e.title, thumb: e.thumb, url: e.url || null, genre: e.genre || null, people: [] };
+    if (!byItem[e.title]) byItem[e.title] = { title: e.title, thumb: e.thumb, url: e.url || null, genre: e.genre || null, format: e.format || null, people: [] };
     if (!byItem[e.title].url && e.url) byItem[e.title].url = e.url;
     if (!byItem[e.title].genre && e.genre) byItem[e.title].genre = e.genre;
+    if (!byItem[e.title].format && e.format) byItem[e.title].format = e.format;
     byItem[e.title].people.push(e);
   });
   const itemGroups = Object.values(byItem).sort((a, b) => b.people.length - a.people.length);
@@ -978,6 +1029,23 @@ export default function DiscogsWantList() {
                       outline: "none",
                     }}
                   />
+                  <input
+                    value={manual.format}
+                    onChange={(e) => setManual({ ...manual, format: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addManual();
+                    }}
+                    placeholder="Format — Vinyl, CD, Cassette, etc. (optional)"
+                    style={{
+                      padding: "9px 10px",
+                      borderRadius: 7,
+                      border: "1px solid #2A2A2A",
+                      background: "#000000",
+                      color: "#F5F0EC",
+                      fontSize: 14,
+                      outline: "none",
+                    }}
+                  />
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -1058,7 +1126,7 @@ export default function DiscogsWantList() {
                     Choose a .csv or .xlsx file
                   </button>
                   <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "8px 2px 0" }}>
-                    Columns recognized: Name, Title/Album, Artist, Year, URL, Notes, Genre — any order, any capitalization
+                    Columns recognized: Name, Title/Album, Artist, Year, URL, Notes, Genre, Format — any order, any capitalization
                   </p>
                 </div>
               )}
@@ -1269,17 +1337,21 @@ export default function DiscogsWantList() {
                     ) : (
                       <div style={{ fontSize: 15, fontWeight: 500, color: "#F5F0EC" }}>{g.title}</div>
                     )}
-                    {g.genre && (
+                    {(g.genre || g.format) && (
                       <div
                         className="mono"
                         style={{
                           fontSize: 10.5,
-                          color: "#E11B23",
                           marginTop: 3,
                           letterSpacing: 0.5,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
                         }}
                       >
-                        {g.genre}
+                        {g.genre && <span style={{ color: "#E11B23" }}>{g.genre}</span>}
+                        {g.genre && g.format && <span style={{ color: "#4A4A4A" }}>|</span>}
+                        {g.format && <span style={{ color: formatColor(g.format) }}>{g.format}</span>}
                       </div>
                     )}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
@@ -1324,7 +1396,7 @@ export default function DiscogsWantList() {
                   <button
                     onClick={() =>
                       openWantModal(
-                        { title: g.title, thumb: g.thumb, url: g.url, genre: g.genre || null },
+                        { title: g.title, thumb: g.thumb, url: g.url, genre: g.genre || null, format: g.format || null },
                         "other"
                       )
                     }
@@ -1532,17 +1604,21 @@ export default function DiscogsWantList() {
                             {item.notes}
                           </span>
                         )}
-                        {item.genre && (
+                        {(item.genre || item.format) && (
                           <span
                             className="mono"
                             style={{
                               fontSize: 10.5,
-                              color: "#E11B23",
                               marginTop: 3,
                               letterSpacing: 0.5,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 5,
                             }}
                           >
-                            {item.genre}
+                            {item.genre && <span style={{ color: "#E11B23" }}>{item.genre}</span>}
+                            {item.genre && item.format && <span style={{ color: "#4A4A4A" }}>|</span>}
+                            {item.format && <span style={{ color: formatColor(item.format) }}>{item.format}</span>}
                           </span>
                         )}
                       </div>
@@ -2257,7 +2333,6 @@ export default function DiscogsWantList() {
           {toast}
         </div>
       )}
-      <Analytics />
     </div>
   );
 }
@@ -2276,7 +2351,7 @@ function EmptyState({ text }) {
     >
       <Disc3 size={28} color="#2A2A2A" style={{ marginBottom: 10 }} />
       <div>{text}</div>
-      <Analytics />
+       <Analytics />
     </div>
   );
 }
