@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote, RotateCcw, Package, PauseCircle, Truck, Pencil } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
+import { Analytics } from "@vercel/analytics/react";
 
 const FONT_LINK = "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,500;1,700&family=Barlow:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap";
 
@@ -2256,6 +2257,7 @@ export default function DiscogsWantList() {
           {toast}
         </div>
       )}
+      <Analytics />
     </div>
   );
 }
