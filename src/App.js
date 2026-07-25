@@ -309,6 +309,33 @@ export default function DiscogsWantList() {
     return "#9A9A9A";
   };
 
+  // If someone's note mentions a different format than the one Discogs gave
+  // us (e.g. the listing is Vinyl but their note says "CD is fine"), show
+  // both formats combined in a distinct color rather than just the original.
+  const getDisplayFormat = (item) => {
+    const base = item.format || null;
+    const notesLower = (item.notes || "").toLowerCase();
+    const mentionsCD = /\bcds?\b/.test(notesLower);
+    const mentionsVinyl = /\bvinyl\b/.test(notesLower);
+
+    if (base && base.toLowerCase().includes("vinyl") && mentionsCD) {
+      return { label: `${base} or CD`, color: "#BA86B6" };
+    }
+    if (base && base.toLowerCase().includes("cd") && mentionsVinyl) {
+      return { label: `${base} or Vinyl`, color: "#BA86B6" };
+    }
+    if (!base && mentionsVinyl && mentionsCD) {
+      return { label: "Vinyl or CD", color: "#BA86B6" };
+    }
+    if (!base && mentionsCD) {
+      return { label: "CD", color: formatColor("CD") };
+    }
+    if (!base && mentionsVinyl) {
+      return { label: "Vinyl", color: formatColor("Vinyl") };
+    }
+    return base ? { label: base, color: formatColor(base) } : null;
+  };
+
   // A duplicate is the same person wanting the same title again (case/whitespace
   // insensitive), excluding anything already moved to Unwanted.
   const isDuplicate = (personName, title) =>
@@ -1646,23 +1673,27 @@ export default function DiscogsWantList() {
                             {item.notes}
                           </span>
                         )}
-                        {(item.genre || item.format) && (
-                          <span
-                            className="mono"
-                            style={{
-                              fontSize: 10.5,
-                              marginTop: 3,
-                              letterSpacing: 0.5,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 5,
-                            }}
-                          >
-                            {item.genre && <span style={{ color: "#E11B23" }}>{item.genre}</span>}
-                            {item.genre && item.format && <span style={{ color: "#4A4A4A" }}>|</span>}
-                            {item.format && <span style={{ color: formatColor(item.format) }}>{item.format}</span>}
-                          </span>
-                        )}
+                        {(() => {
+                          const displayFormat = getDisplayFormat(item);
+                          if (!item.genre && !displayFormat) return null;
+                          return (
+                            <span
+                              className="mono"
+                              style={{
+                                fontSize: 10.5,
+                                marginTop: 3,
+                                letterSpacing: 0.5,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 5,
+                              }}
+                            >
+                              {item.genre && <span style={{ color: "#E11B23" }}>{item.genre}</span>}
+                              {item.genre && displayFormat && <span style={{ color: "#4A4A4A" }}>|</span>}
+                              {displayFormat && <span style={{ color: displayFormat.color }}>{displayFormat.label}</span>}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <button
                         onClick={() =>
