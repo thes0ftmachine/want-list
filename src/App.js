@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Search, Disc3, User, Plus, X, RefreshCw, ListMusic, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, StickyNote, RotateCcw, Package, PauseCircle, Truck, Pencil } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
-import { Analytics } from "@vercel/analytics/react"
+import { Analytics } from "@vercel/analytics/react";
 
 const FONT_LINK = "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,500;1,700&family=Barlow:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap";
 
@@ -73,11 +73,24 @@ function usePageChrome() {
       "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     );
 
+    // Favicon — the Volver Records shop icon
+    const FAVICON_URL =
+      "https://volverrecords.net/cdn/shop/files/IMG_4366.jpg?crop=center&height=32&v=1771336626&width=32";
+    let favicon = document.querySelector('link[rel="icon"]');
+    const prevFaviconHref = favicon ? favicon.getAttribute("href") : null;
+    if (!favicon) {
+      favicon = document.createElement("link");
+      favicon.rel = "icon";
+      document.head.appendChild(favicon);
+    }
+    favicon.setAttribute("href", FAVICON_URL);
+
     return () => {
       document.documentElement.style.background = prevHtmlBg;
       document.body.style.background = prevBodyBg;
       document.body.style.margin = prevBodyMargin;
       if (meta && prevContent !== null) meta.setAttribute("content", prevContent);
+      if (favicon && prevFaviconHref !== null) favicon.setAttribute("href", prevFaviconHref);
     };
   }, []);
 }
@@ -161,8 +174,37 @@ export default function DiscogsWantList() {
   const [uploadName, setUploadName] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  const showToast = (msg) => {
+  // Soft two-tone "ding" using the Web Audio API — no external audio file
+  // needed, so it works the same wherever this is hosted.
+  const playDing = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      [880, 1320].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = now + i * 0.09;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.14, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.4);
+      });
+      setTimeout(() => ctx.close(), 600);
+    } catch (e) {
+      // Silently ignore — sound is a nice-to-have, never worth breaking over
+    }
+  };
+
+  const showToast = (msg, playSound = false) => {
     setToast(msg);
+    if (playSound) playDing();
     setTimeout(() => setToast(null), 2200);
   };
 
@@ -322,7 +364,7 @@ export default function DiscogsWantList() {
       const { error } = await supabase.from("wantlist_entries").insert([entry]);
       if (error) throw error;
       setEntries((prev) => [{ ...entry, addedAt: new Date().toISOString() }, ...prev]);
-      showToast(`Added "${item.title}" for ${finalName}`);
+      showToast(`Added "${item.title}" for ${finalName}`, true);
       closeWantModal();
     } catch (e) {
       showToast("Couldn't save that item — try again");
@@ -359,7 +401,7 @@ export default function DiscogsWantList() {
       setEntries((prev) => [{ ...entry, addedAt: new Date().toISOString() }, ...prev]);
       setManual({ title: "", artist: "", year: "", url: "", genre: "", format: "" });
       setNotes("");
-      showToast(`Added "${entry.title}" to your want list`);
+      showToast(`Added "${entry.title}" to your want list`, true);
     } catch (e) {
       showToast("Couldn't save that item — try again");
     }
@@ -505,7 +547,7 @@ export default function DiscogsWantList() {
       setUploadRows(null);
       setUploadName("");
       if (fileInputRef.current) fileInputRef.current.value = "";
-      showToast(`Added ${newEntries.length} item${newEntries.length !== 1 ? "s" : ""} from spreadsheet`);
+      showToast(`Added ${newEntries.length} item${newEntries.length !== 1 ? "s" : ""} from spreadsheet`, true);
     } catch (e) {
       showToast("Couldn't save the spreadsheet — try again");
     } finally {
@@ -638,7 +680,7 @@ export default function DiscogsWantList() {
         .entry-row { animation: fadein 0.3s ease; }
         @keyframes fadein { from { opacity: 0; transform: translateY(4px);} to {opacity:1; transform:translateY(0);} }
         .toast { animation: risein 0.25s ease; }
-        @keyframes risein { from { opacity:0; transform: translate(-50%, 8px);} to {opacity:1; transform: translate(-50%,0);} }
+        @keyframes risein { from { opacity:0; transform: translate(-50%, -50%) scale(0.92);} to {opacity:1; transform: translate(-50%, -50%) scale(1);} }
 
         /* Mobile: prevent iOS Safari from auto-zooming when an input is
            focused (it does this automatically for any input under 16px) */
@@ -2318,16 +2360,19 @@ export default function DiscogsWantList() {
           className="toast"
           style={{
             position: "fixed",
-            bottom: 24,
+            top: "50%",
             left: "50%",
-            transform: "translateX(-50%)",
+            transform: "translate(-50%, -50%)",
             background: "#E11B23",
             color: "#F5F0EC",
-            padding: "10px 18px",
-            borderRadius: 8,
-            fontSize: 13.5,
-            fontWeight: 500,
-            boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+            padding: "16px 26px",
+            borderRadius: 10,
+            fontSize: 14.5,
+            fontWeight: 600,
+            textAlign: "center",
+            maxWidth: "80vw",
+            boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+            zIndex: 1200,
           }}
         >
           {toast}
@@ -2351,7 +2396,7 @@ function EmptyState({ text }) {
     >
       <Disc3 size={28} color="#2A2A2A" style={{ marginBottom: 10 }} />
       <div>{text}</div>
-       <Analytics />
+      <Analytics />
     </div>
   );
 }
