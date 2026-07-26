@@ -306,36 +306,39 @@ export default function DiscogsWantList() {
   const formatColor = (format) => {
     if (!format) return "#9A9A9A";
     const f = format.toLowerCase();
-    if (f.includes("vinyl")) return "#4CAF50";
-    if (f.includes("cd")) return "#5B9BD5";
+    const hasVinyl = /vinyl/.test(f);
+    const hasCD = /\bcds?\b/.test(f);
+    if (hasVinyl && hasCD) return "#BA86B6";
+    if (hasVinyl) return "#4CAF50";
+    if (hasCD) return "#5B9BD5";
     return "#9A9A9A";
   };
 
   // If someone's note mentions a different format than the one Discogs gave
   // us (e.g. the listing is Vinyl but their note says "CD is fine"), show
-  // both formats combined in a distinct color rather than just the original.
+  // both formats combined. Color always comes from formatColor, so a combo
+  // reads purple whether it came from a note mismatch or was typed directly
+  // into the format field (e.g. manual entry: "Vinyl or CD").
   const getDisplayFormat = (item) => {
     const base = item.format || null;
     const notesLower = (item.notes || "").toLowerCase();
     const mentionsCD = /\bcds?\b/.test(notesLower);
     const mentionsVinyl = /\bvinyl\b/.test(notesLower);
 
-    if (base && base.toLowerCase().includes("vinyl") && mentionsCD) {
-      return { label: `${base} or CD`, color: "#BA86B6" };
+    let label = base;
+    if (base && base.toLowerCase().includes("vinyl") && mentionsCD && !base.toLowerCase().includes("cd")) {
+      label = `${base} or CD`;
+    } else if (base && base.toLowerCase().includes("cd") && mentionsVinyl && !base.toLowerCase().includes("vinyl")) {
+      label = `${base} or Vinyl`;
+    } else if (!base && mentionsVinyl && mentionsCD) {
+      label = "Vinyl or CD";
+    } else if (!base && mentionsCD) {
+      label = "CD";
+    } else if (!base && mentionsVinyl) {
+      label = "Vinyl";
     }
-    if (base && base.toLowerCase().includes("cd") && mentionsVinyl) {
-      return { label: `${base} or Vinyl`, color: "#BA86B6" };
-    }
-    if (!base && mentionsVinyl && mentionsCD) {
-      return { label: "Vinyl or CD", color: "#BA86B6" };
-    }
-    if (!base && mentionsCD) {
-      return { label: "CD", color: formatColor("CD") };
-    }
-    if (!base && mentionsVinyl) {
-      return { label: "Vinyl", color: formatColor("Vinyl") };
-    }
-    return base ? { label: base, color: formatColor(base) } : null;
+
+    return label ? { label, color: formatColor(label) } : null;
   };
 
   // A duplicate is the same person wanting the same title again (case/whitespace
@@ -749,11 +752,12 @@ export default function DiscogsWantList() {
         </p>
         <p style={{ color: "#9A9A9A", fontSize: 14.5, lineHeight: 1.5, marginTop: 14, marginBottom: 28, textAlign: "center" }}>
           Search Discogs, drop what you're hunting for onto the list, and we'll keep an eye out
-          for it. Every entry is tied to a name, be sure to enter it the same way each time. 
+          for it. Every entry is tied to a name, be sure to enter it the same way each time.
         </p>
-        <p style={{ color: "#6FA987", fontSize: 14.5, lineHeight: 1.5, marginTop: 14, marginBottom: 28, textAlign: "center" }}>
-            NOTE: If you add a master release, please state in the notes whether you prefer vinyl, cd, or either (literally state, "vinyl or cd is fine") so we know!
+        <p style={{ color: "#aacab7", fontSize: 14.5, lineHeight: 1.5, marginTop: 14, marginBottom: 28, textAlign: "center" }}>
+          NOTE: If you add a master release, please state in the notes whether you prefer vinyl, cd, or either (literally state, "vinyl or cd is fine") so we know!
         </p>
+
         {/* Tabs */}
         <div
           style={{
