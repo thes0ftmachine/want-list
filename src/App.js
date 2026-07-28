@@ -1203,7 +1203,7 @@ export default function DiscogsWantList() {
                     Choose a .csv or .xlsx file
                   </button>
                   <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "8px 2px 0" }}>
-                    Columns recognized: Name, Title/Album, Artist, Year, URL, Notes, Genre, Format — any order, any capitalization
+                    Columns recognized: Name, Title/Album, Artist, Year, Thumb, URL, Notes, Genre, Format — any order, any capitalization
                   </p>
                 </div>
               )}
