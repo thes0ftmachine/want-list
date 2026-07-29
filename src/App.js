@@ -448,6 +448,7 @@ export default function DiscogsWantList() {
     artist: ["artist", "band"],
     year: ["year", "release year"],
     url: ["url", "link", "discogs url", "discogs link"],
+    thumb: ["thumb", "thumbnail", "image", "cover", "cover image", "image url"],
     notes: ["notes", "note", "comment", "comments"],
     genre: ["genre", "style", "category"],
     format: ["format", "media", "media type"],
@@ -502,6 +503,8 @@ export default function DiscogsWantList() {
         if (artistCol !== -1) claimed.add(artistCol);
         const urlCol = findColumn(header, COLUMN_ALIASES.url, claimed);
         if (urlCol !== -1) claimed.add(urlCol);
+        const thumbCol = findColumn(header, COLUMN_ALIASES.thumb, claimed);
+        if (thumbCol !== -1) claimed.add(thumbCol);
         const yearCol = findColumn(header, COLUMN_ALIASES.year, claimed);
         if (yearCol !== -1) claimed.add(yearCol);
         const notesCol = findColumn(header, COLUMN_ALIASES.notes, claimed);
@@ -527,6 +530,7 @@ export default function DiscogsWantList() {
             artist: artistCol !== -1 ? (r[artistCol] || "").toString().trim() : "",
             year: yearCol !== -1 ? (r[yearCol] || "").toString().trim() : "",
             url: urlCol !== -1 ? (r[urlCol] || "").toString().trim() : "",
+            thumb: thumbCol !== -1 ? (r[thumbCol] || "").toString().trim() : "",
             notes: notesCol !== -1 ? (r[notesCol] || "").toString().trim() : "",
             genre: genreCol !== -1 ? (r[genreCol] || "").toString().trim() : "",
             format: formatCol !== -1 ? (r[formatCol] || "").toString().trim() : "",
@@ -563,7 +567,7 @@ export default function DiscogsWantList() {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name: r.name || fallbackName,
         title,
-        thumb: null,
+        thumb: r.thumb || null,
         year: r.year || "",
         url: r.url || null,
         notes: r.notes || null,
