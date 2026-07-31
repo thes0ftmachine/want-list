@@ -752,7 +752,7 @@ export default function DiscogsWantList() {
             marginBottom: 22,
           }}
         >
-          AUGUST 2026 — JAPAN TRIP WANT LIST
+          THE WANT LIST
         </p>
         <p style={{ color: "#9A9A9A", fontSize: 14.5, lineHeight: 1.5, marginTop: 14, marginBottom: 28, textAlign: "center" }}>
           Search Discogs, drop what you're hunting for onto the list, and we'll keep an eye out
