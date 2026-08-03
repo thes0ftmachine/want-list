@@ -155,6 +155,11 @@ export default function DiscogsWantList() {
   const [wantModal, setWantModal] = useState(null); // { source: "search" | "other", item }
   const [modalNotes, setModalNotes] = useState("");
   const [modalForName, setModalForName] = useState("");
+  // Only used when wantModal.item.type === "master" — Discogs masters
+  // reflect just one representative pressing's format, which is often
+  // misleadingly "CD" even when most people actually want vinyl. This
+  // forces a clear choice instead of guessing. "vinyl" | "cd" | "both" | null
+  const [modalFormatChoice, setModalFormatChoice] = useState(null);
   const [expandedUnwanted, setExpandedUnwanted] = useState({}); // { [personName]: bool }
   const [collapsedPeople, setCollapsedPeople] = useState({}); // { [personName]: bool } — true = collapsed
   const [collapsedStatusBuckets, setCollapsedStatusBuckets] = useState({}); // { "personName:statusKey": bool } — true = collapsed
@@ -369,6 +374,7 @@ export default function DiscogsWantList() {
   const openWantModal = (item, source) => {
     setModalNotes("");
     setModalForName(source === "other" ? "" : name);
+    setModalFormatChoice(null);
     setWantModal({ source, item });
   };
 
@@ -376,7 +382,10 @@ export default function DiscogsWantList() {
     setWantModal(null);
     setModalNotes("");
     setModalForName("");
+    setModalFormatChoice(null);
   };
+
+  const isMasterResult = (item) => item && item.type === "master";
 
   const submitWantModal = async () => {
     if (!wantModal) return;
@@ -386,9 +395,15 @@ export default function DiscogsWantList() {
       return;
     }
     const item = wantModal.item;
+    if (isMasterResult(item) && !modalFormatChoice) {
+      showToast("Choose Vinyl, CD, or Both first");
+      return;
+    }
     if (isDuplicate(finalName, item.title) && !confirmDuplicate(item.title)) {
       return;
     }
+    const masterFormatOverride =
+      modalFormatChoice === "vinyl" ? "Vinyl" : modalFormatChoice === "cd" ? "CD" : modalFormatChoice === "both" ? "Vinyl or CD" : null;
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: finalName,
@@ -398,7 +413,7 @@ export default function DiscogsWantList() {
       url: item.uri ? `https://www.discogs.com${item.uri}` : item.url || null,
       notes: modalNotes.trim() || null,
       genre: deriveGenre(item),
-      format: deriveFormat(item),
+      format: masterFormatOverride || deriveFormat(item),
     };
     try {
       const { error } = await supabase.from("wantlist_entries").insert([entry]);
@@ -2092,6 +2107,46 @@ export default function DiscogsWantList() {
               </>
             )}
 
+            {isMasterResult(wantModal.item) && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
+                  FORMAT <span style={{ color: "#E11B23" }}>*</span>
+                </label>
+                <p style={{ fontSize: 12, color: "#9A9A9A", margin: "0 0 10px", lineHeight: 1.4 }}>
+                  This is a master release — Discogs may show it as CD even when vinyl also exists. Which are you after?
+                </p>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[
+                    { key: "vinyl", label: "Vinyl only", color: "#4CAF50" },
+                    { key: "cd", label: "CD only", color: "#5B9BD5" },
+                    { key: "both", label: "Both", color: "#BA86B6" },
+                  ].map((opt) => {
+                    const selected = modalFormatChoice === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setModalFormatChoice(opt.key)}
+                        style={{
+                          flex: 1,
+                          padding: "9px 6px",
+                          borderRadius: 7,
+                          border: `1px solid ${selected ? opt.color : "#2A2A2A"}`,
+                          background: selected ? `${opt.color}22` : "#000000",
+                          color: selected ? opt.color : "#D8D3CC",
+                          fontSize: 12.5,
+                          fontWeight: selected ? 700 : 500,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
               NOTES <span style={{ color: "#6B6B6B", fontWeight: 400, letterSpacing: 0 }}>(optional)</span>
             </label>
@@ -2122,17 +2177,18 @@ export default function DiscogsWantList() {
             <button
               type="button"
               onClick={submitWantModal}
+              disabled={isMasterResult(wantModal.item) && !modalFormatChoice}
               style={{
                 width: "100%",
                 marginTop: 14,
                 padding: "10px 16px",
                 borderRadius: 8,
                 border: "none",
-                background: "#E11B23",
-                color: "#F5F0EC",
+                background: isMasterResult(wantModal.item) && !modalFormatChoice ? "#3A3A3A" : "#E11B23",
+                color: isMasterResult(wantModal.item) && !modalFormatChoice ? "#8A8A8A" : "#F5F0EC",
                 fontWeight: 600,
                 fontSize: 14,
-                cursor: "pointer",
+                cursor: isMasterResult(wantModal.item) && !modalFormatChoice ? "not-allowed" : "pointer",
               }}
             >
               Add
