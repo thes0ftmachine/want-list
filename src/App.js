@@ -761,7 +761,8 @@ export default function DiscogsWantList() {
           style={{
             textAlign: "center",
             color: "#9A9A9A",
-            fontSize: 10.5,
+            fontSize: 12.5,
+            fontWeight: "bold",
             letterSpacing: 2,
             marginTop: -6,
             marginBottom: 22,
