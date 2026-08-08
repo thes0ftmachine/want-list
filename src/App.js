@@ -136,6 +136,7 @@ export default function DiscogsWantList() {
   const [view, setView] = useState("add"); // add | byItem | byPerson
   const [personFilter, setPersonFilter] = useState("all");
   const [itemGenreFilter, setItemGenreFilter] = useState("all");
+  const [itemSearchQuery, setItemSearchQuery] = useState("");
   const [personGenreFilter, setPersonGenreFilter] = useState("all");
   const [toast, setToast] = useState(null);
   const [toastSuccess, setToastSuccess] = useState(false);
@@ -695,6 +696,28 @@ export default function DiscogsWantList() {
     byItem[e.title].people.push(e);
   });
   const itemGroups = Object.values(byItem).sort((a, b) => b.people.length - a.people.length);
+
+  // Unified By Item search: match the query against the item title, genre,
+  // format, or any person's name. Because an item can have multiple people
+  // requesting it (and potentially different format/genre data), search all
+  // underlying entries rather than only the group's first value.
+  const itemSearchMatches = (group, search) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+
+    const values = [group.title, group.genre, group.format];
+    group.people.forEach((person) => {
+      values.push(person.name, person.title, person.genre, person.format);
+    });
+
+    return values.some((value) =>
+      String(value || "").toLowerCase().includes(q)
+    );
+  };
+
+  const filteredItemGroups = itemGroups.filter((group) =>
+    itemSearchMatches(group, itemSearchQuery)
+  );
 
   // Group by person
   const byPerson = {};
@@ -1379,6 +1402,84 @@ export default function DiscogsWantList() {
         {/* BY ITEM VIEW */}
         {view === "byItem" && (
           <div>
+            <div style={{ marginBottom: 18 }}>
+              <label
+                htmlFor="by-item-search"
+                style={{
+                  display: "block",
+                  fontSize: 11.5,
+                  color: "#9A9A9A",
+                  marginBottom: 6,
+                  fontWeight: 600,
+                  letterSpacing: 1,
+                }}
+              >
+                SEARCH ITEMS
+              </label>
+              <div style={{ position: "relative" }}>
+                <Search
+                  size={17}
+                  style={{
+                    position: "absolute",
+                    left: 12,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    color: "#6B6B6B",
+                    pointerEvents: "none",
+                  }}
+                />
+                <input
+                  id="by-item-search"
+                  type="search"
+                  value={itemSearchQuery}
+                  onChange={(e) => setItemSearchQuery(e.target.value)}
+                  placeholder="Search title, genre, format, or person…"
+                  aria-label="Search items by title, genre, format, or person"
+                  style={{
+                    width: "100%",
+                    padding: "10px 40px 10px 38px",
+                    borderRadius: 8,
+                    border: "1px solid #2A2A2A",
+                    background: "#121212",
+                    color: "#F5F0EC",
+                    fontSize: 14,
+                    boxSizing: "border-box",
+                    outline: "none",
+                  }}
+                />
+                {itemSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setItemSearchQuery("")}
+                    aria-label="Clear item search"
+                    title="Clear search"
+                    style={{
+                      position: "absolute",
+                      right: 8,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 26,
+                      height: 26,
+                      padding: 0,
+                      border: "none",
+                      borderRadius: 5,
+                      background: "transparent",
+                      color: "#9A9A9A",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+              <div className="mono" style={{ fontSize: 10.5, color: "#6B6B6B", marginTop: 6 }}>
+                Searches title, genre, format, and requester together.
+              </div>
+            </div>
+
             {allGenres.length > 0 && (
               <div style={{ marginBottom: 18 }}>
                 <label style={{ display: "block", fontSize: 11.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
@@ -1412,16 +1513,18 @@ export default function DiscogsWantList() {
             )}
             {loadingEntries ? (
               <EmptyState text="Loading the crate…" />
-            ) : itemGroups.length === 0 ? (
+            ) : filteredItemGroups.length === 0 ? (
               <EmptyState
                 text={
-                  itemGenreFilter !== "all"
-                    ? "Nothing matches that genre."
-                    : "No items yet. Be the first to add something you're hunting for."
+                  itemSearchQuery.trim()
+                    ? `Nothing matches “${itemSearchQuery.trim()}”.`
+                    : itemGenreFilter !== "all"
+                      ? "Nothing matches that genre."
+                      : "No items yet. Be the first to add something you're hunting for."
                 }
               />
             ) : (
-              itemGroups.map((g) => (
+              filteredItemGroups.map((g) => (
                 <div
                   key={g.title}
                   className="entry-row"
