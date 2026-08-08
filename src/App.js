@@ -1225,7 +1225,7 @@ export default function DiscogsWantList() {
                   </p>
 
                   <p className="mono" style={{ fontSize: 12.5, color: "#9A9A9A", textAlign: "center", margin: "8px 2px 0" }}>
-                      </br></br><a href="https://volverrecords.net" target="_blank" style={{ color: "#E11B23" }}>BACK TO THE SHOP</a>
+                     <br><br><a href="https://volverrecords.net" target="_blank" style={{ color: "#E11B23" }}>BACK TO THE SHOP</a>
 
                   </p>
                       
