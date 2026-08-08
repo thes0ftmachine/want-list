@@ -1223,11 +1223,25 @@ export default function DiscogsWantList() {
                     Columns recognized: Name, Title/Album, Artist, Year, Thumb, URL, Notes, Genre, Format — any order, any capitalization. <a href="https://drive.google.com/file/d/1Ay0kkFzqWRJRatKqcZQCtXz8ERTSOVhP/view?usp=sharing" target="_blank" style={{ color: "#D4AF37" }}>Download an empty table to use here.</a>
 
                   </p>
-
-                  <p className="mono" style={{ fontSize: 12.5, color: "#9A9A9A", textAlign: "center", margin: "8px 2px 0" }}>
-                     <br><br><a href="https://volverrecords.net" target="_blank" style={{ color: "#E11B23" }}>BACK TO THE SHOP</a>
-
-                  </p>
+                  <br /><br />
+                  <p
+                  className="mono"
+                  style={{
+                  fontSize: 12.5,
+                  color: "#9A9A9A",
+                  textAlign: "center",
+                   margin: "8px 2px 0",
+                  }}
+                  >
+                    <a
+                  href="https://volverrecords.net"
+                  target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "#E11B23" }}
+                    >
+                  BACK TO THE SHOP
+                </a>
+                </p>
                       
                 </div>
               )}
