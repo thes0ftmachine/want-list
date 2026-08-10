@@ -123,13 +123,21 @@ export default function DiscogsWantList() {
   usePageChrome();
 
   const [name, setName] = useState("");
-  const [notes, setNotes] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
-  const [manualMode, setManualMode] = useState(false);
-  const [manual, setManual] = useState({ title: "", artist: "", year: "", url: "", genre: "", format: "" });
+  // Discogs wantlist import — pull in a user's public Discogs wants and
+  // choose which ones to add. Private wantlists 403 server-side; that's
+  // surfaced as discogsImportError. (A private-list import via full OAuth
+  // is a separate, later feature — this only needs the read-only proxy.)
+  const [discogsUsername, setDiscogsUsername] = useState("");
+  const [discogsImporting, setDiscogsImporting] = useState(false);
+  const [discogsImportError, setDiscogsImportError] = useState(null);
+  const [discogsWantItems, setDiscogsWantItems] = useState(null); // normalized items awaiting selection, or null
+  const [discogsSelected, setDiscogsSelected] = useState({}); // { [itemId]: bool }
+  const [discogsImportName, setDiscogsImportName] = useState(""); // editable — defaults to Discogs username
+  const [discogsAdding, setDiscogsAdding] = useState(false);
 
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -231,6 +239,28 @@ export default function DiscogsWantList() {
     loadEntries();
   }, [loadEntries]);
 
+  // Name autofill — remember whatever name someone last typed into the main
+  // "your name" field, on this device, so they don't have to retype it every
+  // visit. Read once on mount, then keep it in sync as they type. This is
+  // just a convenience default; it never overwrites what's already on screen
+  // once loaded, and people are still free to change it per visit.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("volverWantlistName");
+      if (saved && saved.trim()) setName(saved);
+    } catch (e) {
+      // localStorage can throw in some privacy modes — fine to just skip it
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (name.trim()) window.localStorage.setItem("volverWantlistName", name);
+    } catch (e) {
+      // ignore — see above
+    }
+  }, [name]);
+
   const runSearch = async () => {
     if (!query.trim()) return;
     setSearching(true);
@@ -251,8 +281,7 @@ export default function DiscogsWantList() {
       const combined = [...(masterData.results || []), ...(releaseData.results || [])];
 
       if (combined.length === 0) {
-        setSearchError("No results found on Discogs. Try a different search, or add it by hand below.");
-        setManualMode(true);
+        setSearchError("No results found on Discogs. Try a different search.");
       } else {
         // discogs' search endpoint never includes thumb/cover_image, even
         // authenticated — image data only lives on each item's own
@@ -283,9 +312,8 @@ export default function DiscogsWantList() {
       }
     } catch (err) {
       setSearchError(
-        "Discogs search couldn't load from here (this can happen depending on where the widget is hosted). Add the item by hand instead — just paste the details from Discogs."
+        "Discogs search couldn't load from here (this can happen depending on where the widget is hosted). Try again in a moment."
       );
-      setManualMode(true);
     } finally {
       setSearching(false);
     }
@@ -418,39 +446,92 @@ export default function DiscogsWantList() {
     }
   };
 
-  const addManual = async () => {
-    if (!name.trim()) {
-      showToast("Add your name first");
-      return;
-    }
-    if (!manual.title.trim()) {
-      showToast("Add a title");
-      return;
-    }
-    const title = manual.artist.trim() ? `${manual.artist.trim()} – ${manual.title.trim()}` : manual.title.trim();
-    if (isDuplicate(name, title) && !confirmDuplicate(title)) {
-      return;
-    }
-    const entry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: name.trim(),
-      title,
-      thumb: null,
-      year: manual.year.trim(),
-      url: manual.url.trim() || null,
-      notes: notes.trim() || null,
-      genre: manual.genre.trim() || null,
-      format: manual.format.trim() || null,
-    };
+  // --- Discogs wantlist import ---
+  const fetchDiscogsWants = async () => {
+    const username = discogsUsername.trim();
+    if (!username) return;
+    setDiscogsImporting(true);
+    setDiscogsImportError(null);
+    setDiscogsWantItems(null);
+    setDiscogsSelected({});
     try {
-      const { error } = await supabase.from("wantlist_entries").insert([entry]);
-      if (error) throw error;
-      setEntries((prev) => [{ ...entry, addedAt: new Date().toISOString() }, ...prev]);
-      setManual({ title: "", artist: "", year: "", url: "", genre: "", format: "" });
-      setNotes("");
-      showToast(`Added "${entry.title}" to your want list`, true);
+      const res = await fetch(`/api/discogs-wantlist?username=${encodeURIComponent(username)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setDiscogsImportError(data.error || "Couldn't load that wantlist.");
+        return;
+      }
+      if (!data.items || data.items.length === 0) {
+        setDiscogsImportError(`${username}'s Discogs wantlist is empty.`);
+        return;
+      }
+      setDiscogsWantItems(data.items);
+      setDiscogsSelected(Object.fromEntries(data.items.map((it) => [it.id, true])));
+      setDiscogsImportName(name.trim() || username);
     } catch (e) {
-      showToast("Couldn't save that item — try again");
+      setDiscogsImportError("Couldn't reach Discogs — try again.");
+    } finally {
+      setDiscogsImporting(false);
+    }
+  };
+
+  const toggleDiscogsItem = (id) => setDiscogsSelected((s) => ({ ...s, [id]: !s[id] }));
+
+  const cancelDiscogsImport = () => {
+    setDiscogsWantItems(null);
+    setDiscogsSelected({});
+    setDiscogsImportError(null);
+  };
+
+  const confirmDiscogsImport = async () => {
+    if (!discogsWantItems) return;
+    const finalName = discogsImportName.trim();
+    if (!finalName) {
+      showToast("Add a name to import these under");
+      return;
+    }
+    const chosen = discogsWantItems.filter((it) => discogsSelected[it.id]);
+    if (chosen.length === 0) {
+      showToast("Select at least one item");
+      return;
+    }
+    // Bulk import — rather than a confirm() dialog per duplicate (which
+    // would be miserable for a big wantlist), silently skip anything
+    // already on the list under this name and report the count afterward.
+    const fresh = chosen.filter((it) => !isDuplicate(finalName, it.title));
+    if (fresh.length === 0) {
+      showToast("All selected items are already on the list");
+      return;
+    }
+    setDiscogsAdding(true);
+    const newEntries = fresh.map((it) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: finalName,
+      title: it.title,
+      thumb: it.thumb,
+      image_full: it.image_full || it.thumb || null,
+      url: it.url,
+      notes: it.discogsNotes || null,
+      genre: deriveGenre(it),
+      format: deriveFormat(it),
+    }));
+    try {
+      const { error } = await supabase.from("wantlist_entries").insert(newEntries);
+      if (error) throw error;
+      const now = new Date().toISOString();
+      setEntries((prev) => [...newEntries.map((e) => ({ ...e, addedAt: now })), ...prev]);
+      const skipped = chosen.length - fresh.length;
+      showToast(
+        `Added ${fresh.length} item${fresh.length !== 1 ? "s" : ""} for ${finalName}` +
+          (skipped ? ` (${skipped} already on the list, skipped)` : ""),
+        true
+      );
+      cancelDiscogsImport();
+      setDiscogsUsername("");
+    } catch (e) {
+      showToast("Couldn't save those items — try again");
+    } finally {
+      setDiscogsAdding(false);
     }
   };
 
@@ -1027,180 +1108,215 @@ export default function DiscogsWantList() {
               </div>
             )}
 
-            {/* Manual add toggle */}
+            {/* Discogs wantlist import */}
             <div style={{ marginTop: 8 }}>
-              <button
-                onClick={() => setManualMode((m) => !m)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#9A9A9A",
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  padding: 0,
-                  marginBottom: 10,
-                }}
-              >
-                {manualMode ? "− Hide manual entry" : "+ Add an item by hand instead"}
-              </button>
+              <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
+                OR IMPORT FROM A DISCOGS WANTLIST
+              </label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                <input
+                  value={discogsUsername}
+                  onChange={(e) => setDiscogsUsername(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") fetchDiscogsWants();
+                  }}
+                  placeholder="Discogs username"
+                  style={{
+                    flex: 1,
+                    padding: "9px 10px",
+                    borderRadius: 7,
+                    border: "1px solid #2A2A2A",
+                    background: "#121212",
+                    color: "#F5F0EC",
+                    fontSize: 14,
+                    boxSizing: "border-box",
+                    outline: "none",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fetchDiscogsWants()}
+                  disabled={discogsImporting || !discogsUsername.trim()}
+                  style={{
+                    padding: "0 16px",
+                    borderRadius: 7,
+                    border: "none",
+                    background: discogsUsername.trim() ? "#E11B23" : "#3A3A3A",
+                    color: discogsUsername.trim() ? "#F5F0EC" : "#6B6B6B",
+                    fontWeight: 600,
+                    fontSize: 13.5,
+                    cursor: discogsUsername.trim() ? "pointer" : "not-allowed",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {discogsImporting ? <RefreshCw size={14} className="spin" /> : "Import"}
+                </button>
+              </div>
+              <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 10px 2px" }}>
+                Pulls from a public Discogs wantlist — nothing to log in to. Private wantlists aren't supported yet.
+              </p>
 
-              {manualMode && (
+              {discogsImportError && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    background: "#1A0E0F",
+                    border: "1px solid #7A0E12",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    color: "#E8B7B7",
+                    marginBottom: 10,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>{discogsImportError}</span>
+                </div>
+              )}
+
+              {discogsWantItems && (
                 <div
                   style={{
                     background: "#121212",
                     border: "1px solid #2A2A2A",
                     borderRadius: 10,
                     padding: 14,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
                   }}
                 >
-                  <input
-                    value={manual.title}
-                    onChange={(e) => setManual({ ...manual, title: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addManual();
-                    }}
-                    placeholder="Album title *"
-                    style={{
-                      padding: "9px 10px",
-                      borderRadius: 7,
-                      border: "1px solid #2A2A2A",
-                      background: "#000000",
-                      color: "#F5F0EC",
-                      fontSize: 14,
-                      outline: "none",
-                    }}
-                  />
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      value={manual.artist}
-                      onChange={(e) => setManual({ ...manual, artist: e.target.value })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") addManual();
-                      }}
-                      placeholder="Artist"
-                      style={{
-                        flex: 2,
-                        padding: "9px 10px",
-                        borderRadius: 7,
-                        border: "1px solid #2A2A2A",
-                        background: "#000000",
-                        color: "#F5F0EC",
-                        fontSize: 14,
-                        outline: "none",
-                      }}
-                    />
-                    <input
-                      value={manual.year}
-                      onChange={(e) => setManual({ ...manual, year: e.target.value })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") addManual();
-                      }}
-                      placeholder="Year"
-                      style={{
-                        flex: 1,
-                        padding: "9px 10px",
-                        borderRadius: 7,
-                        border: "1px solid #2A2A2A",
-                        background: "#000000",
-                        color: "#F5F0EC",
-                        fontSize: 14,
-                        outline: "none",
-                      }}
-                    />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <ListMusic size={16} color="#E11B23" />
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: "#F5F0EC" }}>
+                      {discogsWantItems.length} item{discogsWantItems.length !== 1 ? "s" : ""} found — pick what to add
+                    </span>
                   </div>
+
+                  <label style={{ display: "block", fontSize: 11.5, color: "#9A9A9A", marginBottom: 5 }}>
+                    Add these under this name:
+                  </label>
                   <input
-                    value={manual.url}
-                    onChange={(e) => setManual({ ...manual, url: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addManual();
-                    }}
-                    placeholder="Link to the item (Discogs, Reverb, etc. — optional)"
+                    value={discogsImportName}
+                    onChange={(e) => setDiscogsImportName(e.target.value)}
+                    placeholder="e.g. Jamie R."
                     style={{
-                      padding: "9px 10px",
+                      width: "100%",
+                      padding: "8px 10px",
                       borderRadius: 7,
-                      border: "1px solid #2A2A2A",
-                      background: "#000000",
-                      color: "#F5F0EC",
-                      fontSize: 14,
-                      outline: "none",
-                    }}
-                  />
-                  <input
-                    value={manual.genre}
-                    onChange={(e) => setManual({ ...manual, genre: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addManual();
-                    }}
-                    placeholder="Genre (optional)"
-                    style={{
-                      padding: "9px 10px",
-                      borderRadius: 7,
-                      border: "1px solid #2A2A2A",
-                      background: "#000000",
-                      color: "#F5F0EC",
-                      fontSize: 14,
-                      outline: "none",
-                    }}
-                  />
-                  <input
-                    value={manual.format}
-                    onChange={(e) => setManual({ ...manual, format: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addManual();
-                    }}
-                    placeholder="Format — Vinyl, CD, Cassette, etc. (optional)"
-                    style={{
-                      padding: "9px 10px",
-                      borderRadius: 7,
-                      border: "1px solid #2A2A2A",
-                      background: "#000000",
-                      color: "#F5F0EC",
-                      fontSize: 14,
-                      outline: "none",
-                    }}
-                  />
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Any pressing is fine / needs OBI / would pay $___"
-                    rows={2}
-                    style={{
-                      padding: "9px 10px",
-                      borderRadius: 7,
-                      border: "1px solid #2A2A2A",
+                      border: discogsImportName.trim() ? "1px solid #2A2A2A" : "1px solid #7A0E12",
                       background: "#000000",
                       color: "#F5F0EC",
                       fontSize: 13.5,
                       boxSizing: "border-box",
                       outline: "none",
-                      resize: "vertical",
-                      fontFamily: "'Barlow', sans-serif",
+                      marginBottom: 10,
                     }}
                   />
-                  <button
-                    type="button"
-                    onClick={() => addManual()}
-                    disabled={!name.trim()}
-                    title={!name.trim() ? "Add your name first" : undefined}
-                    style={{
-                      alignSelf: "flex-start",
-                      padding: "8px 16px",
-                      borderRadius: 7,
-                      border: "none",
-                      background: name.trim() ? "#E11B23" : "#3A3A3A",
-                      color: name.trim() ? "#F5F0EC" : "#6B6B6B",
-                      fontWeight: 600,
-                      fontSize: 13,
-                      cursor: name.trim() ? "pointer" : "not-allowed",
-                      marginTop: 4,
-                    }}
-                  >
-                    Add to want list
-                  </button>
+
+                  <div style={{ display: "flex", gap: 14, marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setDiscogsSelected(Object.fromEntries(discogsWantItems.map((it) => [it.id, true])))}
+                      style={{ background: "none", border: "none", color: "#9A9A9A", fontSize: 11.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDiscogsSelected({})}
+                      style={{ background: "none", border: "none", color: "#9A9A9A", fontSize: 11.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                    >
+                      Select none
+                    </button>
+                  </div>
+
+                  <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 12 }}>
+                    {discogsWantItems.map((it) => {
+                      const checked = !!discogsSelected[it.id];
+                      const dup = isDuplicate(discogsImportName, it.title);
+                      const itemFormat = deriveFormat(it);
+                      return (
+                        <label
+                          key={it.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "7px 2px",
+                            borderBottom: "1px solid #1E1E1E",
+                            cursor: "pointer",
+                            opacity: dup ? 0.55 : 1,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleDiscogsItem(it.id)}
+                            style={{ flexShrink: 0, width: 16, height: 16, accentColor: "#E11B23" }}
+                          />
+                          <RecordThumb src={it.thumb} alt={it.title} size={36} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: 13,
+                                color: "#F5F0EC",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {it.title}
+                            </div>
+                            <div className="mono" style={{ fontSize: 10.5, color: "#9A9A9A" }}>
+                              {it.year || ""} {itemFormat ? `· ${itemFormat}` : ""} {dup ? "· already on the list" : ""}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={confirmDiscogsImport}
+                      disabled={discogsAdding}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "8px 16px",
+                        borderRadius: 7,
+                        border: "none",
+                        background: "#E11B23",
+                        color: "#F5F0EC",
+                        fontWeight: 600,
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {discogsAdding ? <RefreshCw size={14} className="spin" /> : <CheckCircle2 size={14} />}
+                      Add selected
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelDiscogsImport}
+                      style={{
+                        padding: "8px 16px",
+                        borderRadius: 7,
+                        border: "1px solid #2A2A2A",
+                        background: "transparent",
+                        color: "#9A9A9A",
+                        fontWeight: 600,
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
