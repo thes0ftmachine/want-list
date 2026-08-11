@@ -127,10 +127,10 @@ export default function DiscogsWantList() {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
-  // Discogs wantlist import — pull in a user's public Discogs wants and
+  // Discogs wantlist import: pull in a user's public discogs wants and
   // choose which ones to add. Private wantlists 403 server-side; that's
   // surfaced as discogsImportError. (A private-list import via full OAuth
-  // is a separate, later feature — this only needs the read-only proxy.)
+  // is a separate, later feature; this only needs the read-only proxy.)
   const [discogsUsername, setDiscogsUsername] = useState("");
   const [discogsImporting, setDiscogsImporting] = useState(false);
   const [discogsImportError, setDiscogsImportError] = useState(null);
@@ -149,7 +149,7 @@ export default function DiscogsWantList() {
   const [toast, setToast] = useState(null);
   const [toastSuccess, setToastSuccess] = useState(false);
 
-  // "Want" popup — used both when adding a Discogs search result (source:
+  // "Want" popup — used both when adding a discogs search result (source:
   // "search") and when grabbing someone else's item for your own list
   // (source: "other"). search-flow adds already have a name via the field
   // above, so only "other" needs its own name input.
@@ -1138,7 +1138,7 @@ export default function DiscogsWantList() {
             {/* Discogs wantlist explore/import */}
             <div style={{ marginTop: 8 }}>
               <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
-                OR EXPLORE A DISCOGS WANTLIST
+                OR ADD FROM YOUR DISCOGS WANTLIST
               </label>
               <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                 <input
