@@ -135,8 +135,8 @@ export default function DiscogsWantList() {
   const [discogsImporting, setDiscogsImporting] = useState(false);
   const [discogsImportError, setDiscogsImportError] = useState(null);
   const [discogsWantItems, setDiscogsWantItems] = useState(null); // normalized items awaiting selection, or null
-  const [discogsSelected, setDiscogsSelected] = useState({}); // { [itemId]: bool }
-  const [discogsImportName, setDiscogsImportName] = useState(""); // editable — defaults to Discogs username
+  const [discogsSelected, setDiscogsSelected] = useState({}); // { [itemId]: bool } — nothing checked by default
+  const [discogsConfirmOpen, setDiscogsConfirmOpen] = useState(false); // confirmation step before the actual add
   const [discogsAdding, setDiscogsAdding] = useState(false);
 
   const [entries, setEntries] = useState([]);
@@ -446,7 +446,7 @@ export default function DiscogsWantList() {
     }
   };
 
-  // --- Discogs wantlist import ---
+  // --- Discogs wantlist explore/import ---
   const fetchDiscogsWants = async () => {
     const username = discogsUsername.trim();
     if (!username) return;
@@ -465,9 +465,12 @@ export default function DiscogsWantList() {
         setDiscogsImportError(`${username}'s Discogs wantlist is empty.`);
         return;
       }
+      // Deliberately nothing pre-checked — some wantlists run into the
+      // hundreds or thousands of items, and defaulting to "everything
+      // selected" makes it far too easy to dump someone's entire collection
+      // onto the shared list by accident.
       setDiscogsWantItems(data.items);
-      setDiscogsSelected(Object.fromEntries(data.items.map((it) => [it.id, true])));
-      setDiscogsImportName(name.trim() || username);
+      setDiscogsSelected({});
     } catch (e) {
       setDiscogsImportError("Couldn't reach Discogs — try again.");
     } finally {
@@ -483,24 +486,43 @@ export default function DiscogsWantList() {
     setDiscogsImportError(null);
   };
 
-  const confirmDiscogsImport = async () => {
+  // Validates and opens the confirmation modal — the actual insert happens
+  // in confirmDiscogsImport once the person confirms the count they're
+  // about to add.
+  const requestDiscogsImport = () => {
     if (!discogsWantItems) return;
-    const finalName = discogsImportName.trim();
-    if (!finalName) {
-      showToast("Add a name to import these under");
+    if (!name.trim()) {
+      showToast("Add your name first");
       return;
     }
     const chosen = discogsWantItems.filter((it) => discogsSelected[it.id]);
     if (chosen.length === 0) {
-      showToast("Select at least one item");
+      showToast("Select at least one item first");
+      return;
+    }
+    setDiscogsConfirmOpen(true);
+  };
+
+  const confirmDiscogsImport = async () => {
+    if (!discogsWantItems) return;
+    const finalName = name.trim();
+    if (!finalName) {
+      showToast("Add your name first");
+      setDiscogsConfirmOpen(false);
+      return;
+    }
+    const chosen = discogsWantItems.filter((it) => discogsSelected[it.id]);
+    if (chosen.length === 0) {
+      setDiscogsConfirmOpen(false);
       return;
     }
     // Bulk import — rather than a confirm() dialog per duplicate (which
-    // would be miserable for a big wantlist), silently skip anything
-    // already on the list under this name and report the count afterward.
+    // would be miserable for a big batch), silently skip anything already
+    // on the list under this name and report the count afterward.
     const fresh = chosen.filter((it) => !isDuplicate(finalName, it.title));
     if (fresh.length === 0) {
       showToast("All selected items are already on the list");
+      setDiscogsConfirmOpen(false);
       return;
     }
     setDiscogsAdding(true);
@@ -532,6 +554,7 @@ export default function DiscogsWantList() {
       showToast("Couldn't save those items — try again");
     } finally {
       setDiscogsAdding(false);
+      setDiscogsConfirmOpen(false);
     }
   };
 
@@ -807,6 +830,10 @@ export default function DiscogsWantList() {
     byPerson[e.name].items.push(e);
   });
   const personGroups = Object.values(byPerson).sort((a, b) => b.items.length - a.items.length);
+
+  const discogsSelectedCount = discogsWantItems
+    ? discogsWantItems.filter((it) => discogsSelected[it.id]).length
+    : 0;
 
   const tabs = [
     { key: "add", label: "Add items", icon: Plus },
@@ -1108,10 +1135,10 @@ export default function DiscogsWantList() {
               </div>
             )}
 
-            {/* Discogs wantlist import */}
+            {/* Discogs wantlist explore/import */}
             <div style={{ marginTop: 8 }}>
               <label style={{ display: "block", fontSize: 12.5, color: "#9A9A9A", marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>
-                OR IMPORT FROM A DISCOGS WANTLIST
+                OR EXPLORE A DISCOGS WANTLIST
               </label>
               <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                 <input
@@ -1151,11 +1178,11 @@ export default function DiscogsWantList() {
                     gap: 6,
                   }}
                 >
-                  {discogsImporting ? <RefreshCw size={14} className="spin" /> : "Import"}
+                  {discogsImporting ? <RefreshCw size={14} className="spin" /> : "Explore"}
                 </button>
               </div>
               <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 10px 2px" }}>
-                Pulls from a public Discogs wantlist — nothing to log in to. Private wantlists aren't supported yet.
+                Browse a public Discogs wantlist and pick which items to add — nothing is added automatically. Private wantlists aren't supported yet.
               </p>
 
               {discogsImportError && (
@@ -1187,33 +1214,12 @@ export default function DiscogsWantList() {
                     padding: 14,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                     <ListMusic size={16} color="#E11B23" />
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: "#F5F0EC" }}>
                       {discogsWantItems.length} item{discogsWantItems.length !== 1 ? "s" : ""} found — pick what to add
                     </span>
                   </div>
-
-                  <label style={{ display: "block", fontSize: 11.5, color: "#9A9A9A", marginBottom: 5 }}>
-                    Add these under this name:
-                  </label>
-                  <input
-                    value={discogsImportName}
-                    onChange={(e) => setDiscogsImportName(e.target.value)}
-                    placeholder="e.g. Jamie R."
-                    style={{
-                      width: "100%",
-                      padding: "8px 10px",
-                      borderRadius: 7,
-                      border: discogsImportName.trim() ? "1px solid #2A2A2A" : "1px solid #7A0E12",
-                      background: "#000000",
-                      color: "#F5F0EC",
-                      fontSize: 13.5,
-                      boxSizing: "border-box",
-                      outline: "none",
-                      marginBottom: 10,
-                    }}
-                  />
 
                   <div style={{ display: "flex", gap: 14, marginBottom: 8 }}>
                     <button
@@ -1230,12 +1236,15 @@ export default function DiscogsWantList() {
                     >
                       Select none
                     </button>
+                    <span className="mono" style={{ fontSize: 11, color: "#6B6B6B", marginLeft: "auto" }}>
+                      {discogsSelectedCount} selected
+                    </span>
                   </div>
 
                   <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 12 }}>
                     {discogsWantItems.map((it) => {
                       const checked = !!discogsSelected[it.id];
-                      const dup = isDuplicate(discogsImportName, it.title);
+                      const dup = isDuplicate(name, it.title);
                       const itemFormat = deriveFormat(it);
                       return (
                         <label
@@ -1281,8 +1290,9 @@ export default function DiscogsWantList() {
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       type="button"
-                      onClick={confirmDiscogsImport}
-                      disabled={discogsAdding}
+                      onClick={requestDiscogsImport}
+                      disabled={discogsAdding || discogsSelectedCount === 0}
+                      title={!name.trim() ? "Add your name first" : discogsSelectedCount === 0 ? "Select at least one item" : undefined}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -1290,11 +1300,11 @@ export default function DiscogsWantList() {
                         padding: "8px 16px",
                         borderRadius: 7,
                         border: "none",
-                        background: "#E11B23",
-                        color: "#F5F0EC",
+                        background: discogsSelectedCount > 0 ? "#E11B23" : "#3A3A3A",
+                        color: discogsSelectedCount > 0 ? "#F5F0EC" : "#6B6B6B",
                         fontWeight: 600,
                         fontSize: 13,
-                        cursor: "pointer",
+                        cursor: discogsAdding || discogsSelectedCount === 0 ? "not-allowed" : "pointer",
                       }}
                     >
                       {discogsAdding ? <RefreshCw size={14} className="spin" /> : <CheckCircle2 size={14} />}
@@ -2632,6 +2642,89 @@ export default function DiscogsWantList() {
                   color: "#9A9A9A",
                   fontSize: 12.5,
                   cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {discogsConfirmOpen && (
+        <div
+          onClick={() => !discogsAdding && setDiscogsConfirmOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 360,
+              background: "#121212",
+              border: "1px solid #2A2A2A",
+              borderRadius: 12,
+              padding: 20,
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <ListMusic size={18} color="#E11B23" />
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#F5F0EC" }}>
+                Add {discogsSelectedCount} item{discogsSelectedCount !== 1 ? "s" : ""}?
+              </div>
+            </div>
+            <p style={{ fontSize: 13.5, color: "#D8D3CC", lineHeight: 1.5, margin: "0 0 18px" }}>
+              This adds {discogsSelectedCount} item{discogsSelectedCount !== 1 ? "s" : ""} from{" "}
+              {discogsUsername.trim()}'s Discogs wantlist to the want list, under{" "}
+              <strong style={{ color: "#F5F0EC" }}>{name.trim()}</strong>.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={confirmDiscogsImport}
+                disabled={discogsAdding}
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  padding: "10px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#E11B23",
+                  color: "#F5F0EC",
+                  fontWeight: 600,
+                  fontSize: 14,
+                  cursor: discogsAdding ? "not-allowed" : "pointer",
+                }}
+              >
+                {discogsAdding ? <RefreshCw size={14} className="spin" /> : <CheckCircle2 size={14} />}
+                Yes, add them
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiscogsConfirmOpen(false)}
+                disabled={discogsAdding}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 8,
+                  border: "1px solid #2A2A2A",
+                  background: "transparent",
+                  color: "#9A9A9A",
+                  fontWeight: 600,
+                  fontSize: 13.5,
+                  cursor: discogsAdding ? "not-allowed" : "pointer",
                 }}
               >
                 Cancel
