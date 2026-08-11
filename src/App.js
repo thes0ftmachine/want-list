@@ -1182,7 +1182,7 @@ export default function DiscogsWantList() {
                 </button>
               </div>
               <p className="mono" style={{ fontSize: 10.5, color: "#9A9A9A", margin: "0 0 10px 2px" }}>
-                Browse a public Discogs wantlist and pick which items to add — nothing is added automatically. Private wantlists aren't supported yet.
+                Browse a public Discogs wantlist and pick which items to add. Nothing is added automatically. Private wantlists aren't supported yet.
               </p>
 
               {discogsImportError && (
